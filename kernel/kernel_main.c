@@ -1,6 +1,7 @@
 #include "vmm.h"
 #include "mach_ipc.h"
 #include "scheduler.h"
+#include "task.h"
 
 extern void console_init(BootInfo *boot_info);
 extern void kputs(const char *str, unsigned int color);
@@ -50,13 +51,16 @@ void kernel_main(BootInfo *boot_info) {
 
     // 3. 스케줄러 초기화 & 스레드 생성
     scheduler_init();
-    thread_create(thread_a);
-    thread_create(thread_b);
-    apic_init();
+    task_init();
+    task_t *kernel_task = task_create();
+    unsigned int task_port = mach_port_allocate();
+    task_add_port(kernel_task, task_port);
 
-    kputs("\n[KERNEL] ENABLING INTERRUPTS & MULTITASKING...\n", 0x00FFFFFF);
-
-    __asm__ __volatile__("sti");
+    kputs("[TASK] ASSIGNED PORT ", 0x0000FF00);
+    kput_dec(task_port, 0x0000FF00);
+    kputs(" TO TASK ", 0x0000FF00);
+    kput_dec(kernel_task->task_id, 0x0000FF00);
+    kputs("\n", 0x0000FF00);
 
     while (1) {
         __asm__ __volatile__("hlt");

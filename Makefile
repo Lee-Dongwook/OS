@@ -18,8 +18,8 @@ OVMF = $(shell find /opt/homebrew/Cellar/qemu /usr/local/Cellar/qemu -name "edk2
 ASM_SRCS = $(KERNEL_DIR)/context_switch.s
 ASM_OBJS = $(BUILD_DIR)/context_switch.o
 
-KERNEL_SRCS = $(KERNEL_DIR)/kernel_main.c $(KERNEL_DIR)/font.c $(KERNEL_DIR)/console.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/mach_ipc.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/apic.c
-KERNEL_OBJS = $(BUILD_DIR)/kernel_main.o $(BUILD_DIR)/font.o $(BUILD_DIR)/console.o $(BUILD_DIR)/pmm.o $(BUILD_DIR)/vmm.o $(BUILD_DIR)/idt.o $(BUILD_DIR)/mach_ipc.o $(BUILD_DIR)/scheduler.o $(BUILD_DIR)/apic.o $(ASM_OBJS)
+KERNEL_SRCS = $(KERNEL_DIR)/kernel_main.c $(KERNEL_DIR)/font.c $(KERNEL_DIR)/console.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/mach_ipc.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/apic.c $(KERNEL_DIR)/task.c
+KERNEL_OBJS = $(BUILD_DIR)/kernel_main.o $(BUILD_DIR)/font.o $(BUILD_DIR)/console.o $(BUILD_DIR)/pmm.o $(BUILD_DIR)/vmm.o $(BUILD_DIR)/idt.o $(BUILD_DIR)/mach_ipc.o $(BUILD_DIR)/scheduler.o $(BUILD_DIR)/apic.o $(BUILD_DIR)/task.o $(ASM_OBJS)
 
 $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.s
 	clang --target=x86_64-unknown-windows-gnu -c $< -o $@
