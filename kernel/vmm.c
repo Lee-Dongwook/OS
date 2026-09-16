@@ -3,6 +3,7 @@
 
 extern void kputs(const char *str, unsigned int color);
 extern void kput_hex(unsigned long long val, unsigned int color);
+extern void *pmm_alloc_page(void);
 
 static page_table_t *kernel_pml4 = 0;
 
@@ -10,13 +11,18 @@ void vmm_map_page(page_table_t *pml4, unsigned long long virt, unsigned long lon
     unsigned long long pml4_idx = (virt >> 39) & 0x1FF;
     unsigned long long pdpt_idx = (virt >> 30) & 0x1FF;
     unsigned long long pd_idx   = (virt >> 21) & 0x1FF;
-    unsigned long long pt_idx   = (virt >> 12) & 0x1FF;
+    unsigned long long pt_idx = (virt >> 12) & 0x1FF;
+
+    // 사용자 페이지는 모든 상위 페이지 테이블 엔트리에도 USER 비트가 있어야 한다.
+    unsigned long long table_flags = PAGE_PRESENT | PAGE_WRITABLE | (flags & PAGE_USER);
 
     // 1. PML4 -> PDPT
     if (!(pml4->entries[pml4_idx] & PAGE_PRESENT)) {
         page_table_t *pdpt = (page_table_t *)pmm_alloc_page();
         for (int i = 0; i < 512; i++) pdpt->entries[i] = 0;
-        pml4->entries[pml4_idx] = (unsigned long long)pdpt | PAGE_PRESENT | PAGE_WRITABLE;
+        pml4->entries[pml4_idx] = (unsigned long long)pdpt | table_flags;
+    } else if (flags & PAGE_USER) {
+        pml4->entries[pml4_idx] |= PAGE_USER;
     }
     page_table_t *pdpt = (page_table_t *)(pml4->entries[pml4_idx] & ~0xFFFULL);
 
@@ -24,7 +30,9 @@ void vmm_map_page(page_table_t *pml4, unsigned long long virt, unsigned long lon
     if (!(pdpt->entries[pdpt_idx] & PAGE_PRESENT)) {
         page_table_t *pd = (page_table_t *)pmm_alloc_page();
         for (int i = 0; i < 512; i++) pd->entries[i] = 0;
-        pdpt->entries[pdpt_idx] = (unsigned long long)pd | PAGE_PRESENT | PAGE_WRITABLE;
+        pdpt->entries[pdpt_idx] = (unsigned long long)pd | table_flags;
+    } else if (flags & PAGE_USER) {
+        pdpt->entries[pdpt_idx] |= PAGE_USER;
     }
     page_table_t *pd = (page_table_t *)(pdpt->entries[pdpt_idx] & ~0xFFFULL);
 
@@ -32,12 +40,18 @@ void vmm_map_page(page_table_t *pml4, unsigned long long virt, unsigned long lon
     if (!(pd->entries[pd_idx] & PAGE_PRESENT)) {
         page_table_t *pt = (page_table_t *)pmm_alloc_page();
         for (int i = 0; i < 512; i++) pt->entries[i] = 0;
-        pd->entries[pd_idx] = (unsigned long long)pt | PAGE_PRESENT | PAGE_WRITABLE;
+        pd->entries[pd_idx] = (unsigned long long)pt | table_flags;
+    } else if (flags & PAGE_USER) {
+        pd->entries[pd_idx] |= PAGE_USER;
     }
     page_table_t *pt = (page_table_t *)(pd->entries[pd_idx] & ~0xFFFULL);
 
     // 4. PT -> Phys
     pt->entries[pt_idx] = (phys & ~0xFFFULL) | flags | PAGE_PRESENT;
+}
+
+page_table_t *vmm_kernel_pml4(void) {
+    return kernel_pml4;
 }
 
 void vmm_init(BootInfo *boot_info) {

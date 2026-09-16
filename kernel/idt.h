@@ -2,6 +2,18 @@
 #define IDT_H
 
 typedef struct {
+  unsigned int reserved0;
+  unsigned long long rsp0;
+  unsigned long long rsp1;
+  unsigned long long rsp2;
+  unsigned long long reserved1;
+  unsigned long long ist[7];
+  unsigned long long reserved2;
+  unsigned short reserved3;
+  unsigned short iomap_base;
+} __attribute__((packed)) tss_entry_t;
+
+typedef struct {
     unsigned short limit_low;
     unsigned short base_low;
     unsigned char  base_middle;
@@ -9,6 +21,12 @@ typedef struct {
     unsigned char  granularity;
     unsigned char  base_high;
 } __attribute__((packed)) gdt_entry_t;
+
+typedef struct {
+    gdt_entry_t low;
+    unsigned int base_upper;
+    unsigned int reserved;
+} __attribute__((packed)) gdt_tss_entry_t;
 
 typedef struct {
     unsigned short limit;
@@ -41,5 +59,6 @@ struct interrupt_frame {
 
 void gdt_init(void);
 void idt_init(void);
+void tss_set_rsp0(unsigned long long rsp0);
 
 #endif

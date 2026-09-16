@@ -6,54 +6,95 @@ extern void apic_send_eoi(void);
 extern void kputs(const char *str, unsigned int color);
 extern void kput_hex(unsigned long long val, unsigned int color);
 
-static gdt_entry_t gdt[3];
+static struct {
+    gdt_entry_t null_desc;
+    gdt_entry_t kcode;
+    gdt_entry_t kdata;
+    gdt_entry_t udata;
+    gdt_entry_t ucode;
+    gdt_tss_entry_t tss_desc;
+} __attribute__((packed)) gdt;
+
 static gdtr_t gdtr;
+static tss_entry_t tss;
 
 static idt_entry_t idt[256];
 static idtr_t idtr;
 
+static unsigned char kernel_tss_stack[8192] __attribute__((aligned(16)));
+
+void tss_set_rsp0(unsigned long long rsp0) {
+  tss.rsp0 = rsp0;
+}
+
 void gdt_init(void) {
     // Null Descriptor
-    gdt[0] = (gdt_entry_t){0, 0, 0, 0, 0, 0};
+    gdt.null_desc = (gdt_entry_t){0, 0, 0, 0, 0, 0};
 
-    // Kernel Code Segment (0x08)
-    gdt[1].limit_low   = 0x0000;
-    gdt[1].base_low    = 0x0000;
-    gdt[1].base_middle = 0x00;
-    gdt[1].access      = 0x9A; // Present, Ring 0, Code, Executable, Readable
-    gdt[1].granularity = 0x20; // Long Mode (64-bit)
-    gdt[1].base_high   = 0x00;
+    gdt.kcode = (gdt_entry_t){
+        .limit_low = 0x0000,
+        .base_low = 0x0000,
+        .base_middle = 0x00,
+        .access = 0x9A,      // Present, Ring 0, Code, Executable, Readable
+        .granularity = 0x20, // Long Mode (64-bit)
+        .base_high = 0x00};
 
-    // Kernel Data Segment (0x10)
-    gdt[2].limit_low   = 0x0000;
-    gdt[2].base_low    = 0x0000;
-    gdt[2].base_middle = 0x00;
-    gdt[2].access      = 0x92; // Present, Ring 0, Data, Writable
-    gdt[2].granularity = 0x00;
-    gdt[2].base_high   = 0x00;
+    gdt.kdata = (gdt_entry_t){.limit_low = 0x0000,
+                              .base_low = 0x0000,
+                              .base_middle = 0x00,
+                              .access = 0x92, // Present, Ring 0, Data, Writable
+                              .granularity = 0x00,
+                              .base_high = 0x00};
+
+    gdt.udata = (gdt_entry_t){.limit_low = 0x0000,
+                              .base_low = 0x0000,
+                              .base_middle = 0x00,
+                              .access = 0xF2, // Present, Ring 3, Data, Writable
+                              .granularity = 0x00,
+                              .base_high = 0x00};
+
+    gdt.ucode = (gdt_entry_t){
+        .limit_low = 0x0000,
+        .base_low = 0x0000,
+        .base_middle = 0x00,
+        .access = 0xFA,      // Present, Ring 3, Code, Executable, Readable
+        .granularity = 0x20, // Long Mode (64-bit)
+        .base_high = 0x00};
+
+    for (int i = 0; i < (int)sizeof(tss_entry_t); i++) {
+        ((char *)&tss)[i] = 0;
+    }
+
+    tss.rsp0 = (unsigned long long)&kernel_tss_stack[sizeof(kernel_tss_stack)];
+    tss.iomap_base = sizeof(tss_entry_t);
+
+    unsigned long long tss_addr = (unsigned long long)&tss;
+    unsigned int tss_size = sizeof(tss_entry_t) - 1;
+
+    gdt.tss_desc.low.limit_low   = (unsigned short)(tss_size & 0xFFFF);
+    gdt.tss_desc.low.base_low    = (unsigned short)(tss_addr & 0xFFFF);
+    gdt.tss_desc.low.base_middle = (unsigned char)((tss_addr >> 16) & 0xFF);
+    gdt.tss_desc.low.access      = 0x89; // Present, Ring 0, Available 64-bit TSS
+    gdt.tss_desc.low.granularity = (unsigned char)((tss_size >> 16) & 0x0F);
+    gdt.tss_desc.low.base_high   = (unsigned char)((tss_addr >> 24) & 0xFF);
+    gdt.tss_desc.base_upper      = (unsigned int)(tss_addr >> 32);
+    gdt.tss_desc.reserved = 0;
 
     gdtr.limit = sizeof(gdt) - 1;
     gdtr.base  = (unsigned long long)&gdt;
-
     __asm__ __volatile__("lgdt %0" : : "m"(gdtr));
-    // UEFI가 사용하던 GDT를 교체했으므로 새 커널 코드/데이터 선택자로
-    // 세그먼트 레지스터를 다시 적재한다. 이후 IDT와 iretq가 0x08/0x10을
-    // 일관되게 사용할 수 있다.
+
+    // Clang의 x86-64 인라인 어셈블리는 16비트 "a" 입력 제약을 받지 않는다.
+    // TSS selector를 AX에 직접 적재한 뒤 LTR을 실행한다.
     __asm__ __volatile__(
-        "pushq $0x08\n\t"
-        "leaq 1f(%%rip), %%rax\n\t"
-        "pushq %%rax\n\t"
-        "lretq\n\t"
-        "1:\n\t"
-        "movw $0x10, %%ax\n\t"
-        "movw %%ax, %%ds\n\t"
-        "movw %%ax, %%es\n\t"
-        "movw %%ax, %%ss\n\t"
+        "movw $0x28, %%ax\n\t"
+        "ltr %%ax"
         :
         :
-        : "rax", "memory"
+        : "ax", "memory"
     );
-    kputs("[GDT] GLOBAL DESCRIPTOR TABLE LOADED\n", 0x00FFFF00);
+
+    kputs("[GDT/TSS] EXTENDED GDT & TSS LOADED (RSP0 SET)\n", 0x00FFFF00);
 }
 
 __attribute__((interrupt))
@@ -103,7 +144,6 @@ void idt_init(void) {
 
     // Double Fault (8번) 핸들러 등록
     idt_set_gate(8, (void *)double_fault_handler, 0x8E);
-
     idt_set_gate(32, (void *)timer_isr, 0x8E);
     idt_set_gate(33, (void *)keyboard_isr, 0x8E);
 

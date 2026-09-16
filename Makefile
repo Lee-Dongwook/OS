@@ -15,7 +15,8 @@ DISK_IMG = $(BUILD_DIR)/os_image.img
 
 OVMF = $(shell find /opt/homebrew/Cellar/qemu /usr/local/Cellar/qemu -name "edk2-x86_64-code.fd" 2>/dev/null | head -n 1)
 
-ASM_SRCS = $(KERNEL_DIR)/context_switch.s $(KERNEL_DIR)/syscall_entry.s $(KERNEL_DIR)/keyboard_isr.s
+# userland.s에는 Ring 3 진입과 SYSRET 기반 시스템 콜 진입점이 함께 있다.
+ASM_SRCS = $(KERNEL_DIR)/context_switch.s $(KERNEL_DIR)/keyboard_isr.s $(KERNEL_DIR)/userland.s
 ASM_OBJS = $(ASM_SRCS:$(KERNEL_DIR)/%.s=$(BUILD_DIR)/%.o)
 
 KERNEL_SRCS = $(KERNEL_DIR)/kernel_main.c $(KERNEL_DIR)/font.c $(KERNEL_DIR)/console.c $(KERNEL_DIR)/debug.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/initramfs.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/mach_ipc.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/apic.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/syscall.c

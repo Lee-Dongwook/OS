@@ -17,6 +17,8 @@ extern void gdt_init(void);
 extern void idt_init(void);
 extern void apic_init(void);
 extern void syscall_init(void);
+extern void *pmm_alloc_page(void);
+extern void enter_user_mode(unsigned long long rip, unsigned long long rsp);
 
 static void ipc_self_test(void) {
     unsigned int port = mach_port_allocate();
@@ -102,17 +104,31 @@ void kernel_main(BootInfo *boot_info) {
     // IDT와 APIC 타이머가 준비된 뒤에만 인터럽트를 허용한다.
     __asm__ __volatile__("sti" : : : "memory");
 
-   kputs("\n[TEST] INVOKING SYSCALL 1 (SYS_MACH_MSG)...\n", 0x00FFFF00);
+    kputs("\n[TEST] PREPARING RING 3 USERLAND ENTRY...\n", 0x00FFFF00);
 
-    __asm__ __volatile__(
-        "movq $1, %%rax\n\t"
-        "call syscall_entry\n\t"
-        :
-        :
-        : "memory"
-    );
+    void *user_code_phys = pmm_alloc_page();
+    void *user_stack_phys = pmm_alloc_page();
+    if (!user_code_phys || !user_stack_phys) {
+        kputs("[TEST] USERLAND PAGE ALLOCATION FAILED\n", 0x00FF0000);
+        while (1) {
+            __asm__ __volatile__("hlt");
+        }
+    }
 
-    kputs("[TEST] SYSCALL RETURN SUCCESSFUL!\n", 0x0000FF00);
+    vmm_map_page(vmm_kernel_pml4(), 0x400000, (unsigned long long)user_code_phys,
+                 PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
+    vmm_map_page(vmm_kernel_pml4(), 0x500000, (unsigned long long)user_stack_phys,
+                 PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
+
+    // PMM 페이지는 하위 메모리 identity mapping을 통해 커널에서도 접근 가능하다.
+    unsigned char *uprog = (unsigned char *)user_code_phys;
+    uprog[0] = 0x48; uprog[1] = 0xC7; uprog[2] = 0xC0; uprog[3] = 0x01; uprog[4] = 0x00; uprog[5] = 0x00; uprog[6] = 0x00; // mov $1, %rax
+    uprog[7] = 0x0F; uprog[8] = 0x05;                                                                                    // syscall
+    uprog[9] = 0xEB; uprog[10] = 0xFE;
+
+    kputs("[TEST] JUMPING TO RING 3 USERLAND (0x400000)...\n", 0x0000FF00);
+
+    enter_user_mode(0x400000, 0x501000);
 
     while (1) {
         __asm__ __volatile__("hlt");

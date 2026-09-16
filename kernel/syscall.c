@@ -58,8 +58,9 @@ void syscall_init(void) {
     // EFER (0xC0000080) -> SCE (System Call Enable) 비트 0 설정
     wrmsr(IA32_EFER, rdmsr(IA32_EFER) | 1);
 
-    // STAR (0xC0000081) -> 커널 CS(0x08) 및 유저 CS(0x1B) 설정
-    unsigned long long star = ((unsigned long long)0x08 << 32) | ((unsigned long long)0x1B << 48);
+    // STAR: SYSCALL 커널 CS=0x08. SYSRET의 CS는 user_base+16이므로
+    // user_base=0x13을 넣어 user CS(0x23), SS(0x1B)를 만들게 한다.
+    unsigned long long star = ((unsigned long long)0x08 << 32) | ((unsigned long long)0x13 << 48);
     wrmsr(IA32_STAR, star);
 
     // LSTAR (0xC0000082) -> syscall 핸들러 진입점 등록

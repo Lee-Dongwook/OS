@@ -25,5 +25,6 @@ typedef struct {
 
 void vmm_init(BootInfo *boot_info);
 void vmm_map_page(page_table_t *pml4, unsigned long long virt, unsigned long long phys, unsigned long long flags);
+page_table_t *vmm_kernel_pml4(void);
 
 #endif
