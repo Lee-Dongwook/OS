@@ -84,15 +84,10 @@ void gdt_init(void) {
     gdtr.base  = (unsigned long long)&gdt;
     __asm__ __volatile__("lgdt %0" : : "m"(gdtr));
 
-    // Clang의 x86-64 인라인 어셈블리는 16비트 "a" 입력 제약을 받지 않는다.
-    // TSS selector를 AX에 직접 적재한 뒤 LTR을 실행한다.
-    __asm__ __volatile__(
-        "movw $0x28, %%ax\n\t"
-        "ltr %%ax"
-        :
-        :
-        : "rax", "memory"
-    );
+    // LTR은 16비트 메모리 피연산자를 받을 수 있다. 레지스터 clobber를
+    // 사용하지 않아 Clang과 IDE의 인라인 어셈블리 검사 모두에 호환된다.
+    const unsigned short tss_selector = 0x28;
+    __asm__ __volatile__("ltr %0" : : "m"(tss_selector) : "memory");
 
     kputs("[GDT/TSS] EXTENDED GDT & TSS LOADED (RSP0 SET)\n", 0x00FFFF00);
 }
