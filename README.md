@@ -19,8 +19,11 @@ UEFI 환경에서 부팅되는 x86_64 교육용 운영체제 커널 프로젝트
 - 로컬 APIC 초기화 코드
 - 원형 큐 기반 Mach 스타일 포트/메시지 IPC
 - 로컬 APIC 타이머 인터럽트로 전환되는 라운드 로빈 커널 스레드 스케줄러
-- 태스크별 페이지 테이블/포트 권한 구조와 포트 생성·삭제 API
+- 태스크별 페이지 테이블/포트 권한 구조와 태스크·포트 생성/삭제 API
 - `IA32_LSTAR` MSR 기반 x86_64 시스템 콜 진입점 및 `SYS_MACH_MSG` 예제 호출
+- PS/2 키보드 IRQ1 입력과 명령 셸
+- UEFI FAT32 파일 프로토콜로 읽어 온 부팅 파일과 읽기 전용 initramfs 조회 인터페이스
+- QEMU 디버그 포트(`0xE9`) 기반 헤드리스 부팅 로그
 
 ## 프로젝트 구조
 
@@ -67,6 +70,9 @@ make
 # QEMU에서 부팅
 make run
 
+# 화면 없이 부팅 로그를 터미널에서 확인
+make run-debug
+
 # 생성물 제거
 make clean
 ```
@@ -77,6 +83,20 @@ make clean
 - `build/os_image.img`: QEMU에 연결하는 FAT32 부팅 이미지
 
 정상적으로 부팅되면 화면에 `XNU OS KERNEL INIT...`, IPC 송수신 자가 검증, 시스템 콜 호출/복귀 메시지가 출력됩니다. 이후 APIC 타이머가 두 개의 예제 커널 스레드를 번갈아 실행합니다.
+
+`make run`으로 실행한 QEMU 창을 클릭하면 키보드로 셸을 사용할 수 있습니다.
+
+| 명령 | 설명 |
+| --- | --- |
+| `help` | 사용 가능한 명령 출력 |
+| `clear` | 콘솔 화면 지우기 |
+| `mem` | 전체/가용 물리 메모리 출력 |
+| `tasks` | 활성 태스크와 커널 스레드 수 출력 |
+| `ports` | 활성 IPC 포트 수 출력 |
+| `spawn` | 태스크와 IPC 포트 한 개 생성 |
+| `ls` | initramfs의 파일 목록 출력 |
+| `cat README.TXT` | 내장 initramfs 파일 내용 출력 (대소문자 무관) |
+| `cat BOOT.TXT` | FAT32 부팅 이미지에서 UEFI가 읽어 전달한 파일 내용 출력 |
 
 ## 초기화 흐름
 
@@ -94,11 +114,13 @@ UEFI efi_main
 1. `make clean && make` 실행 후 오류 없이 `build/os_image.img`가 생성되는지 확인합니다.
 2. `make run`으로 QEMU를 실행합니다.
 3. `[TEST] IPC SEND/RECEIVE SUCCESSFUL!` 및 `[TEST] SYSCALL RETURN SUCCESSFUL!` 메시지가 표시되는지 확인합니다.
-4. 이후 `[THREAD A]`와 `[THREAD B]` 로그가 번갈아 표시되는지 확인합니다.
-5. 실패하면 `make`의 컴파일/링커 출력과 QEMU 콘솔 메시지를 함께 확인합니다. 특히 Homebrew 패키지 경로와 OVMF 펌웨어 탐색 여부를 점검합니다.
+4. `[INITRAMFS] FAT BOOT FILE LOADED:` 메시지가 표시되는지 확인합니다.
+5. QEMU 창에서 `help`, `mem`, `spawn`, `tasks`, `ls`, `cat readme.txt`, `cat boot.txt`를 차례로 입력해 결과를 확인합니다.
+6. GUI 없이 초기화 로그만 검증하려면 `make run-debug`를 사용합니다.
+7. 실패하면 `make`의 컴파일/링커 출력과 QEMU 디버그 로그를 함께 확인합니다. 특히 Homebrew 패키지 경로와 OVMF 펌웨어 탐색 여부를 점검합니다.
 
 ## 현재 한계와 다음 단계
 
-이 프로젝트는 학습용 최소 구현입니다. 사용자 모드 전환, 안전한 메모리 해제/보호, 실행 파일 로더, 파일 시스템 및 정식 시스템 콜 ABI는 아직 완성되지 않았습니다.
+이 프로젝트는 학습용 최소 구현입니다. 태스크는 커널 내부의 자원 관리 모델이며 아직 Ring 3 사용자 모드로 전환하지 않습니다. 파일 조회는 내장 initramfs와 UEFI가 부팅 전에 읽어 전달한 FAT32 파일을 사용합니다. 커널 자체의 VirtIO 블록 드라이버·FAT 디스크 읽기·실행 파일 로더는 아직 구현하지 않았습니다. 페이지 권한 보호와 정식 사용자 공간 시스템 콜 ABI도 후속 작업입니다.
 
-다음 단계로는 QEMU에서 타이머 기반 스레드 전환을 검증하고, 사용자 모드 프로세스와 페이지 권한을 도입하는 것을 권장합니다.
+다음 단계로는 VirtIO 블록 드라이버와 FAT 읽기 계층을 추가하고, TSS/GDT 사용자 세그먼트와 페이지 권한을 바탕으로 Ring 3 프로세스를 도입하는 것을 권장합니다.

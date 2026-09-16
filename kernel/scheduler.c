@@ -19,6 +19,8 @@ void thread_create(void (*entry_point)(void)) {
     // 인터럽트 핸들러가 저장하는 레지스터와 iretq 프레임을 동일한 순서로 만든다.
     unsigned long long *sp = (unsigned long long *)&t->stack[sizeof(t->stack)];
     sp = (unsigned long long *)((unsigned long long)sp & ~0xFULL);
+    // iretq 이후의 RSP를 Windows x64 함수 진입 시 요구되는 8 mod 16으로 만든다.
+    sp--;
 
     // 같은 권한 레벨(Ring 0)로 iretq 하면 RIP, CS, RFLAGS만 pop한다.
     sp--; *sp = 0x202;            // RFLAGS (Interrupt enabled)
@@ -61,4 +63,8 @@ unsigned long long schedule(unsigned long long current_rsp) {
     next->state = THREAD_RUNNING;
 
     return next->rsp;
+}
+
+int scheduler_thread_count(void) {
+    return thread_count;
 }

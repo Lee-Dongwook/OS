@@ -30,6 +30,7 @@ typedef struct {
 void mach_ipc_init(void);
 unsigned int mach_port_allocate(void);
 int mach_port_destroy(unsigned int port_id);
+int mach_port_active_count(void);
 int mach_msg_send(mach_message_t *msg);
 int mach_msg_receive(unsigned int port_id, mach_message_t *out_msg);
 

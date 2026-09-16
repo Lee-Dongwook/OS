@@ -19,6 +19,8 @@ typedef struct {
     void *memory_map;
     unsigned long long memory_map_size;
     unsigned long long descriptor_size;
+    const char *boot_file_data;
+    unsigned long long boot_file_size;
 } BootInfo;
 
 void vmm_init(BootInfo *boot_info);

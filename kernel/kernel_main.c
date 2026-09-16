@@ -2,6 +2,9 @@
 #include "mach_ipc.h"
 #include "scheduler.h"
 #include "task.h"
+#include "keyboard.h"
+#include "shell.h"
+#include "initramfs.h"
 
 extern void console_init(BootInfo *boot_info);
 extern void kputs(const char *str, unsigned int color);
@@ -45,15 +48,19 @@ static void ipc_self_test(void) {
 
 void thread_a(void) {
     while (1) {
-        kputs("[THREAD A] RUNNING...\n", 0x00FF00FF);
-        for (volatile int i = 0; i < 50000000; i++);
+        for (volatile int i = 0; i < 5000000; i++);
     }
 }
 
 void thread_b(void) {
     while (1) {
-        kputs("[THREAD B] RUNNING...\n", 0x00FFFF00);
-        for (volatile int i = 0; i < 50000000; i++);
+        for (volatile int i = 0; i < 5000000; i++);
+    }
+}
+
+void idle_thread(void) {
+    while (1) {
+        __asm__ __volatile__("hlt");
     }
 }
 
@@ -82,8 +89,12 @@ void kernel_main(BootInfo *boot_info) {
     scheduler_init();
     task_init();
     syscall_init();
+    initramfs_init(boot_info->boot_file_data, boot_info->boot_file_size);
     ipc_self_test();
+    keyboard_init();
+    shell_init();
 
+    thread_create(idle_thread);
     thread_create(thread_a);
     thread_create(thread_b);
     apic_init();

@@ -1,6 +1,7 @@
 #include "idt.h"
 
 extern void timer_isr(void);
+extern void keyboard_isr(void);
 extern void apic_send_eoi(void);
 extern void kputs(const char *str, unsigned int color);
 extern void kput_hex(unsigned long long val, unsigned int color);
@@ -104,6 +105,7 @@ void idt_init(void) {
     idt_set_gate(8, (void *)double_fault_handler, 0x8E);
 
     idt_set_gate(32, (void *)timer_isr, 0x8E);
+    idt_set_gate(33, (void *)keyboard_isr, 0x8E);
 
     // IDTR 로드
     __asm__ __volatile__("lidt %0" : : "m"(idtr));

@@ -15,11 +15,11 @@ DISK_IMG = $(BUILD_DIR)/os_image.img
 
 OVMF = $(shell find /opt/homebrew/Cellar/qemu /usr/local/Cellar/qemu -name "edk2-x86_64-code.fd" 2>/dev/null | head -n 1)
 
-ASM_SRCS = $(KERNEL_DIR)/context_switch.s $(KERNEL_DIR)/syscall_entry.s
-ASM_OBJS = $(BUILD_DIR)/context_switch.o $(BUILD_DIR)/syscall_entry.o
+ASM_SRCS = $(KERNEL_DIR)/context_switch.s $(KERNEL_DIR)/syscall_entry.s $(KERNEL_DIR)/keyboard_isr.s
+ASM_OBJS = $(ASM_SRCS:$(KERNEL_DIR)/%.s=$(BUILD_DIR)/%.o)
 
-KERNEL_SRCS = $(KERNEL_DIR)/kernel_main.c $(KERNEL_DIR)/font.c $(KERNEL_DIR)/console.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/mach_ipc.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/apic.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/syscall.c
-KERNEL_OBJS = $(BUILD_DIR)/kernel_main.o $(BUILD_DIR)/font.o $(BUILD_DIR)/console.o $(BUILD_DIR)/pmm.o $(BUILD_DIR)/vmm.o $(BUILD_DIR)/idt.o $(BUILD_DIR)/mach_ipc.o $(BUILD_DIR)/scheduler.o $(BUILD_DIR)/apic.o $(BUILD_DIR)/task.o $(BUILD_DIR)/syscall.o  $(ASM_OBJS)
+KERNEL_SRCS = $(KERNEL_DIR)/kernel_main.c $(KERNEL_DIR)/font.c $(KERNEL_DIR)/console.c $(KERNEL_DIR)/debug.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/initramfs.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/mach_ipc.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/apic.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/syscall.c
+KERNEL_OBJS = $(KERNEL_SRCS:$(KERNEL_DIR)/%.c=$(BUILD_DIR)/%.o) $(ASM_OBJS)
 
 $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.s
 	clang --target=x86_64-unknown-windows-gnu -c $< -o $@
@@ -45,6 +45,7 @@ $(DISK_IMG): $(EFI_IMAGE)
 	mmd -i $(DISK_IMG) ::/EFI
 	mmd -i $(DISK_IMG) ::/EFI/BOOT
 	mcopy -i $(DISK_IMG) $(EFI_IMAGE) ::/EFI/BOOT/BOOTX64.EFI
+	mcopy -i $(DISK_IMG) assets/README.TXT ::/README.TXT
 
 run: $(DISK_IMG)
 	qemu-system-x86_64 -drive if=pflash,format=raw,readonly=on,file="$(OVMF)" \
@@ -52,7 +53,14 @@ run: $(DISK_IMG)
 	                   -device virtio-blk-pci,drive=bootdisk \
 	                   -net none
 
+run-debug: $(DISK_IMG)
+	qemu-system-x86_64 -display none -debugcon stdio -global isa-debugcon.iobase=0xe9 \
+	                   -drive if=pflash,format=raw,readonly=on,file="$(OVMF)" \
+	                   -drive file=$(DISK_IMG),format=raw,if=none,id=bootdisk \
+	                   -device virtio-blk-pci,drive=bootdisk \
+	                   -net none
+
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run clean
+.PHONY: all run run-debug clean

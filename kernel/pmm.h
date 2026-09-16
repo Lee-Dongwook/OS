@@ -17,5 +17,7 @@ typedef struct {
 void pmm_init(void *memory_map, unsigned long long map_size, unsigned long long descriptor_size);
 void *pmm_alloc_page(void);
 void pmm_free_page(void *ptr);
+unsigned long long pmm_total_usable_memory(void);
+unsigned long long pmm_free_memory(void);
 
 #endif

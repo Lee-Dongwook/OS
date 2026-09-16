@@ -53,3 +53,27 @@ int task_add_port(task_t *task, unsigned int port_id) {
     task->ports[task->port_count++] = port_id;
     return 0;
 }
+
+int task_destroy(task_t *task) {
+    if (!task || !task->is_active) {
+        return -1;
+    }
+    if (task->pml4) {
+        pmm_free_page(task->pml4);
+    }
+    task->task_id = 0;
+    task->is_active = 0;
+    task->pml4 = 0;
+    task->port_count = 0;
+    return 0;
+}
+
+int task_active_count(void) {
+    int count = 0;
+    for (int i = 0; i < MAX_TASKS; i++) {
+        if (task_table[i].is_active) {
+            count++;
+        }
+    }
+    return count;
+}

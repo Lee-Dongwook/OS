@@ -20,12 +20,17 @@ timer_isr:
     push %r14
     push %r15
 
-    # 2. APIC EOI 전송
+    # 2. APIC EOI 전송. 이 프로젝트의 C 코드는 Windows x64 ABI를 사용하므로
+    # 호출자 shadow space(32바이트)와 정렬 여유를 확보한다.
+    sub $0x28, %rsp
     call apic_send_eoi
+    add $0x28, %rsp
 
-    # 3. 현재 스택 포인터(RSP)를 schedule() 함수 인자로 전달 (RDI)
-    mov %rsp, %rdi
+    # 3. 현재 스택 포인터(RSP)를 schedule() 첫 번째 인자(RCX)로 전달
+    mov %rsp, %rcx
+    sub $0x28, %rsp
     call schedule
+    add $0x28, %rsp
 
     # 4. schedule()이 반환한 새로운 스레드의 RSP 적용 (RAX)
     mov %rax, %rsp

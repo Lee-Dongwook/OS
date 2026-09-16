@@ -65,6 +65,27 @@ void *pmm_alloc_page(void) {
 }
 
 void pmm_free_page(void *ptr) {
+    if (!ptr) {
+        return;
+    }
     unsigned long long page_idx = (unsigned long long)ptr / PAGE_SIZE;
+    // 저메모리와 비트맵 범위 밖의 주소는 커널/펌웨어 영역일 수 있으므로 해제하지 않는다.
+    if (page_idx < 256 || page_idx >= BITMAP_SIZE * 8) {
+        return;
+    }
     clear_bit(page_idx);
+}
+
+unsigned long long pmm_total_usable_memory(void) {
+    return total_usable_memory;
+}
+
+unsigned long long pmm_free_memory(void) {
+    unsigned long long free_pages = 0;
+    for (unsigned long long i = 0; i < BITMAP_SIZE * 8; i++) {
+        if (!test_bit(i)) {
+            free_pages++;
+        }
+    }
+    return free_pages * PAGE_SIZE;
 }

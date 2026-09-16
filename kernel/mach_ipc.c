@@ -54,6 +54,16 @@ int mach_port_destroy(unsigned int port_id) {
     return 0;
 }
 
+int mach_port_active_count(void) {
+    int count = 0;
+    for (int i = 1; i < MAX_PORTS; i++) {
+        if (port_table[i].is_active) {
+            count++;
+        }
+    }
+    return count;
+}
+
 // 메시지 전송 (Port Queue에 push)
 int mach_msg_send(mach_message_t *msg) {
     if (!msg) {

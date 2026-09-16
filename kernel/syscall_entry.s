@@ -7,12 +7,13 @@ syscall_entry:
     push %r11
 
     # 2. C 함수(do_syscall)로 인자 전달
-    # System V ABI: 1st arg = RDI, 2nd arg = RSI
-    # 요청한 Syscall 번호(RAX)를 RDI로 복사
-    mov %rdi, %rsi       # 유저 파라미터 -> 2번째 인자
-    mov %rax, %rdi       # Syscall 번호 -> 1번째 인자
+    # Windows x64 ABI: 1st arg = RCX, 2nd arg = RDX, shadow space = 32 bytes
+    mov %rdi, %rdx       # 유저 파라미터 -> 2번째 인자
+    mov %rax, %rcx       # Syscall 번호 -> 1번째 인자
 
+    sub $0x28, %rsp
     call do_syscall
+    add $0x28, %rsp
 
     # 3. RCX, R11 복원
     pop %r11

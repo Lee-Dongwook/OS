@@ -1,4 +1,5 @@
 #include "font.h"
+#include "debug.h"
 
 typedef struct {
     unsigned int *framebuffer;
@@ -42,11 +43,38 @@ void console_init(BootInfo *boot_info) {
   g_cursor_y = 0;
 }
 
+void console_clear(void) {
+  unsigned int *fb = g_boot_info->framebuffer;
+  unsigned int stride = g_boot_info->pixels_per_scan_line;
+  for (unsigned int y = 0; y < g_boot_info->height; y++) {
+    for (unsigned int x = 0; x < stride; x++) {
+      fb[y * stride + x] = 0;
+    }
+  }
+  g_cursor_x = 0;
+  g_cursor_y = 0;
+}
+
 void put_char(char c, unsigned int color) {
+  debug_putc(c);
   if (c == '\n') {
         g_cursor_x = 0;
         g_cursor_y += 16;
         scroll_if_needed();
+        return;
+  }
+
+  if (c == '\b') {
+        if (g_cursor_x >= 8) {
+          g_cursor_x -= 8;
+          unsigned int *fb = g_boot_info->framebuffer;
+          unsigned int stride = g_boot_info->pixels_per_scan_line;
+          for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 8; x++) {
+              fb[(g_cursor_y + y) * stride + (g_cursor_x + x)] = 0;
+            }
+          }
+        }
         return;
   }
 
