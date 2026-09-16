@@ -148,6 +148,9 @@ typedef struct {
     unsigned int width;
     unsigned int height;
     unsigned int pixels_per_scan_line;
+    void *memory_map;
+    UINTN memory_map_size;
+    UINTN descriptor_size;
 } BootInfo;
 
 EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
@@ -199,6 +202,9 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     boot_info.width = gop->Mode->Info->HorizontalResolution;
     boot_info.height = gop->Mode->Info->VerticalResolution;
     boot_info.pixels_per_scan_line = gop->Mode->Info->PixelsPerScanLine;
+    boot_info.memory_map = memory_map_buffer;
+    boot_info.memory_map_size = map_size;
+    boot_info.descriptor_size = descriptor_size;
 
     extern void kernel_main(BootInfo * boot_info);
 
