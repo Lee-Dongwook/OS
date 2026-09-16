@@ -143,6 +143,13 @@ static EFI_GUID gEfiGraphicsOutputProtocolGuid =
 // 넉넉하게 16KB로 메모리 맵 버퍼 선언
 static unsigned char memory_map_buffer[16384];
 
+typedef struct {
+    unsigned int *framebuffer;
+    unsigned int width;
+    unsigned int height;
+    unsigned int pixels_per_scan_line;
+} BootInfo;
+
 EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     EFI_GRAPHICS_OUTPUT_PROTOCOL *gop;
     EFI_STATUS status;
@@ -187,26 +194,16 @@ EFI_STATUS efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     //    이제 UEFI 서비스는 종료되었으며 직접 하드웨어를 제어합니다.
     // -------------------------------------------------------------
 
-    unsigned int *framebuffer = (unsigned int *)gop->Mode->FrameBufferBase;
-    unsigned int width = gop->Mode->Info->HorizontalResolution;
-    unsigned int height = gop->Mode->Info->VerticalResolution;
-    unsigned int stride = gop->Mode->Info->PixelsPerScanLine;
+    BootInfo boot_info;
+    boot_info.framebuffer = (unsigned int *)gop->Mode->FrameBufferBase;
+    boot_info.width = gop->Mode->Info->HorizontalResolution;
+    boot_info.height = gop->Mode->Info->VerticalResolution;
+    boot_info.pixels_per_scan_line = gop->Mode->Info->PixelsPerScanLine;
 
-    // 화면 전체를 검은색으로 지우기 (TianoCore 로고 덮어쓰기)
-    for (UINTN y = 0; y < height; y++) {
-        for (UINTN x = 0; x < width; x++) {
-            framebuffer[y * stride + x] = 0x00000000;
-        }
-    }
+    extern void kernel_main(BootInfo * boot_info);
 
-    // 화면 좌측 상단에 150x150 크기의 빨간색(Red) 네모박스 렌더링
-    for (UINTN y = 0; y < 150; y++) {
-        for (UINTN x = 0; x < 150; x++) {
-            framebuffer[y * stride + x] = 0x00FF0000; // Red (AARRGGBB)
-        }
-    }
+    kernel_main(&boot_info);
 
-    // 커널 메인 무한 루프
     while (1) {
         __asm__ __volatile__("hlt");
     }
