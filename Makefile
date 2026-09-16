@@ -15,15 +15,22 @@ DISK_IMG = $(BUILD_DIR)/os_image.img
 
 OVMF = $(shell find /opt/homebrew/Cellar/qemu /usr/local/Cellar/qemu -name "edk2-x86_64-code.fd" 2>/dev/null | head -n 1)
 
+KERNEL_SRCS = $(KERNEL_DIR)/kernel_main.c $(KERNEL_DIR)/font.c $(KERNEL_DIR)/console.c
+KERNEL_OBJS = $(BUILD_DIR)/kernel_main.o $(BUILD_DIR)/font.o $(BUILD_DIR)/console.o
+
 all: $(DISK_IMG)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)/EFI/BOOT
 
-$(EFI_IMAGE): $(BOOT_DIR)/main.c $(KERNEL_DIR)/kernel_main.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $(BOOT_DIR)/main.c -o $(BUILD_DIR)/boot_main.o
-	$(CC) $(CFLAGS) -c $(KERNEL_DIR)/kernel_main.c -o $(BUILD_DIR)/kernel_main.o
-	$(LD) -subsystem:efi_application -entry:efi_main $(BUILD_DIR)/boot_main.o $(BUILD_DIR)/kernel_main.o -out:$(EFI_IMAGE)
+$(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/boot_main.o: $(BOOT_DIR)/main.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(EFI_IMAGE): $(BUILD_DIR)/boot_main.o $(KERNEL_OBJS)
+	$(LD) -subsystem:efi_application -entry:efi_main $^ -out:$(EFI_IMAGE)
 
 $(DISK_IMG): $(EFI_IMAGE)
 	cp $(EFI_IMAGE) $(BUILD_DIR)/EFI/BOOT/BOOTX64.EFI
