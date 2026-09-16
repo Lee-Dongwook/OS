@@ -91,7 +91,7 @@ void gdt_init(void) {
         "ltr %%ax"
         :
         :
-        : "ax", "memory"
+        : "rax", "memory"
     );
 
     kputs("[GDT/TSS] EXTENDED GDT & TSS LOADED (RSP0 SET)\n", 0x00FFFF00);
