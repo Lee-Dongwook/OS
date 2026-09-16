@@ -1,6 +1,6 @@
 #include "idt.h"
-#include "scheduler.h"
 
+extern void timer_isr(void);
 extern void apic_send_eoi(void);
 extern void kputs(const char *str, unsigned int color);
 extern void kput_hex(unsigned long long val, unsigned int color);
@@ -10,18 +10,6 @@ static gdtr_t gdtr;
 
 static idt_entry_t idt[256];
 static idtr_t idtr;
-
-// Vector 32 (타이머) 핸들러
-__attribute__((interrupt))
-void timer_interrupt_handler(struct interrupt_frame *frame) {
-    context_t *ctx = (context_t *)frame;
-    
-    // EOI 전송 (인터럽트 처리 완료 알림)
-    apic_send_eoi();
-
-    // 스케줄러 호출
-    schedule(ctx);
-}
 
 void gdt_init(void) {
     // Null Descriptor
@@ -98,7 +86,7 @@ void idt_init(void) {
     // Double Fault (8번) 핸들러 등록
     idt_set_gate(8, (void *)double_fault_handler, 0x8E);
 
-    idt_set_gate(32, (void *)timer_interrupt_handler, 0x8E);
+    idt_set_gate(32, (void *)timer_isr, 0x8E);
 
     // IDTR 로드
     __asm__ __volatile__("lidt %0" : : "m"(idtr));

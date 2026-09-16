@@ -46,20 +46,17 @@ void scheduler_init(void) {
     kputs("[SCHEDULER] MULTITASKING SCHEDULER INITIALIZED\n", 0x00FFFF00);
 }
 
-// 다음 실행할 스레드 라운드로빈 선택
-void schedule(context_t *ctx) {
-    if (thread_count == 0) return;
+unsigned long long schedule(unsigned long long current_rsp) {
+    if (thread_count == 0) return current_rsp;
 
-    // 현재 스레드 스택 저장
+    // 현재 스레드의 스택 포인터 저장
     if (current_thread_index >= 0) {
-        threads[current_thread_index].rsp = (unsigned long long)ctx;
+        threads[current_thread_index].rsp = current_rsp;
     }
 
     // 다음 스레드 선택
     current_thread_index = (current_thread_index + 1) % thread_count;
     thread_t *next = &threads[current_thread_index];
 
-    kputs("[SCHED] SWITCH TO THREAD ", 0x0000FF00);
-    kput_dec(next->id, 0x0000FF00);
-    kputs("\n", 0x0000FF00);
+    return next->rsp;
 }

@@ -27,6 +27,6 @@ typedef struct thread {
 
 void scheduler_init(void);
 void thread_create(void (*entry_point)(void));
-void schedule(context_t *ctx);
+unsigned long long schedule(unsigned long long current_rsp);
 
 #endif
