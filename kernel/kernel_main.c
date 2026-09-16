@@ -13,6 +13,7 @@ extern void vmm_init(BootInfo *boot_info);
 extern void gdt_init(void);
 extern void idt_init(void);
 extern void apic_init(void);
+extern void syscall_init(void);
 
 void thread_a(void) {
     while (1) {
@@ -52,15 +53,19 @@ void kernel_main(BootInfo *boot_info) {
     // 3. 스케줄러 초기화 & 스레드 생성
     scheduler_init();
     task_init();
-    task_t *kernel_task = task_create();
-    unsigned int task_port = mach_port_allocate();
-    task_add_port(kernel_task, task_port);
+    syscall_init();
 
-    kputs("[TASK] ASSIGNED PORT ", 0x0000FF00);
-    kput_dec(task_port, 0x0000FF00);
-    kputs(" TO TASK ", 0x0000FF00);
-    kput_dec(kernel_task->task_id, 0x0000FF00);
-    kputs("\n", 0x0000FF00);
+   kputs("\n[TEST] INVOKING SYSCALL 1 (SYS_MACH_MSG)...\n", 0x00FFFF00);
+
+    __asm__ __volatile__(
+        "movq $1, %%rax\n\t"
+        "call syscall_entry\n\t"
+        :
+        :
+        : "memory"
+    );
+
+    kputs("[TEST] SYSCALL RETURN SUCCESSFUL!\n", 0x0000FF00);
 
     while (1) {
         __asm__ __volatile__("hlt");
