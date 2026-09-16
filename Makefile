@@ -15,8 +15,8 @@ DISK_IMG = $(BUILD_DIR)/os_image.img
 
 OVMF = $(shell find /opt/homebrew/Cellar/qemu /usr/local/Cellar/qemu -name "edk2-x86_64-code.fd" 2>/dev/null | head -n 1)
 
-KERNEL_SRCS = $(KERNEL_DIR)/kernel_main.c $(KERNEL_DIR)/font.c $(KERNEL_DIR)/console.c
-KERNEL_OBJS = $(BUILD_DIR)/kernel_main.o $(BUILD_DIR)/font.o $(BUILD_DIR)/console.o
+KERNEL_SRCS = $(KERNEL_DIR)/kernel_main.c $(KERNEL_DIR)/font.c $(KERNEL_DIR)/console.c $(KERNEL_DIR)/pmm.c
+KERNEL_OBJS = $(BUILD_DIR)/kernel_main.o $(BUILD_DIR)/font.o $(BUILD_DIR)/console.o $(BUILD_DIR)/pmm.o
 
 all: $(DISK_IMG)
 
