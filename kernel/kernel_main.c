@@ -1,5 +1,6 @@
 #include "vmm.h"
 #include "virtio_blk.h"
+#include "fat32.h"
 
 extern void console_init(BootInfo *boot_info);
 extern void kputs(const char *str, unsigned int color);
@@ -29,6 +30,10 @@ void kernel_main(BootInfo *boot_info) {
         kputs("\n", 0x0000FF00);
     } else {
         kputs("[TEST] READ SECTOR 0 FAILED!\n", 0x00FF0000);
+    }
+
+    if (fat32_init() == 0) {
+        fat32_list_root();
     }
 
     while (1) {
