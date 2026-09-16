@@ -12,8 +12,9 @@ extern void console_init(BootInfo *boot_info);
 extern void kputs(const char *str, unsigned int color);
 extern void kput_hex(unsigned long long val, unsigned int color);
 extern void kput_dec(unsigned long long val, unsigned int color);
+
 extern void pmm_init(void *memory_map, unsigned long long map_size, unsigned long long descriptor_size);
-extern void *pmm_alloc_page(void);
+extern void vmm_init(BootInfo *boot_info);
 
 void kernel_main(BootInfo *boot_info) {
   unsigned int *fb = boot_info->framebuffer;
@@ -27,21 +28,15 @@ void kernel_main(BootInfo *boot_info) {
 
     console_init(boot_info);
 
-    kputs("XNU OS KERNEL INIT...\n", 0x0000FF00); // Green
+    kputs("XNU OS KERNEL INIT...\n\n", 0x0000FF00);
+
     pmm_init(boot_info->memory_map, boot_info->memory_map_size, boot_info->descriptor_size);
 
-    void *page1 = pmm_alloc_page();
-    void *page2 = pmm_alloc_page();
-    
-    kputs("[PMM] ALLOCATED PAGE 1: ", 0x00FFFFFF);
-    kput_hex((unsigned long long)page1, 0x00FFFFFF);
-    kputs("\n", 0x00FFFFFF);
+    vmm_init(boot_info);
 
-    kputs("[PMM] ALLOCATED PAGE 2: ", 0x00FFFFFF);
-    kput_hex((unsigned long long)page2, 0x00FFFFFF);
-    kputs("\n", 0x00FFFFFF);
+    kputs("\n[KERNEL] PAGE TABLE SWITCH SUCCESSFUL!\n", 0x00FFFFFF);
 
-  while (1) {
-    __asm__ __volatile__("hlt");
-  }
+    while (1) {
+        __asm__ __volatile__("hlt");
+    }
 }
