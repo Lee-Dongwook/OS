@@ -5,7 +5,7 @@ extern void kputs(const char *str, unsigned int color);
 extern void kput_hex(unsigned long long val, unsigned int color);
 extern void *pmm_alloc_page(void);
 
-static page_table_t *kernel_pml4 = 0;
+page_table_t *kernel_pml4 = 0;
 
 void vmm_map_page(page_table_t *pml4, unsigned long long virt, unsigned long long phys, unsigned long long flags) {
     unsigned long long pml4_idx = (virt >> 39) & 0x1FF;

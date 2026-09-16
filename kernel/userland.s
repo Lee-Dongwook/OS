@@ -1,4 +1,7 @@
 .global enter_user_mode
+.global enter_userland
+.global _enter_userland
+
 .extern do_syscall
 
 enter_user_mode:
@@ -20,6 +23,14 @@ enter_user_mode:
     pushq %rcx         # RIP (User Entry Point)
 
     iretq              # Ring 3로 전환
+
+enter_userland:
+_enter_userland:
+    # RDI = entry_point, RSI = user_stack
+    # Ring 3 진입 제어 코드 (iretq 또는 sysretq)
+    mov %rdi, %rbx
+    mov %rsi, %rsp
+    jmp *%rbx
 
 .section .bss
 .align 16

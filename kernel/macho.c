@@ -1,9 +1,14 @@
 #include "macho.h"
+#include "fat32.h"
 #include "vmm.h"
+#include "pmm.h"
 
 extern void *pmm_alloc_page(void);
 extern void kputs(const char *str, unsigned int color);
 extern void kput_hex(unsigned long long val, unsigned int color);
+extern page_table_t *kernel_pml4;
+
+static unsigned char file_buffer[64 * 1024];
 
 static void memcpy(void *dest, const void *src, unsigned long long n) {
     unsigned char *d = (unsigned char *)dest;
@@ -87,3 +92,67 @@ int macho_load_binary(const unsigned char *binary_data, unsigned long long *entr
 
     return -1;
 }
+
+unsigned long long macho_load_from_fat32(const char *filename) {
+    kputs("[MACHO-LOADER] LOADING FILE FROM FAT32: ", 0x00FFFF00);
+    kputs(filename, 0x00FFFF00);
+    kputs("\n", 0x00FFFF00);
+
+    int read_bytes = fat32_read_file(filename, file_buffer, sizeof(file_buffer));
+    if (read_bytes <= 0) {
+        kputs("[MACHO-LOADER] ERROR: FILE READ FAILED OR EMPTY\n", 0x00FF0000);
+        return 0;
+    }
+
+    mach_header_64_t *header = (mach_header_64_t *)file_buffer;
+    if (header->magic != MH_MAGIC_64) {
+        kputs("[MACHO-LOADER] ERROR: INVALID MACH-O MAGIC NUMBER\n", 0x00FF0000);
+        return 0;
+    }
+
+    kputs("[MACHO-LOADER] VALID MACH-O 64-BIT HEADER FOUND!\n", 0x0000FF00);
+
+    unsigned long long entry_point = 0;
+    unsigned char *cmd_ptr = file_buffer + sizeof(mach_header_64_t);
+
+    for (unsigned int i = 0; i < header->ncmds; i++) {
+        unsigned int cmd = *(unsigned int *)cmd_ptr;
+        unsigned int cmdsize = *(unsigned int *)(cmd_ptr + 4);
+
+        if (cmd == LC_SEGMENT_64) {
+            segment_command_64_t *seg = (segment_command_64_t *)cmd_ptr;
+
+            if (seg->vmsize > 0) {
+                kputs("  -> SEGMENT: ", 0x0000FFFF);
+                kputs(seg->segname, 0x0000FFFF);
+                kputs(" VADDR: ", 0x0000FFFF);
+                kput_hex(seg->vmaddr, 0x0000FFFF);
+                kputs("\n", 0x0000FFFF);
+
+                // 메모리 할당 및 VMM 매핑 (Ring 3 접근 허용: PAGE_USER | PAGE_WRITABLE)
+                for (unsigned long long offset = 0; offset < seg->vmsize; offset += PAGE_SIZE) {
+                    void *phys_page = pmm_alloc_page();
+                    vmm_map_page(kernel_pml4, seg->vmaddr + offset, (unsigned long long)phys_page, 0x07); // Present | Writable | User
+                }
+
+                // 파일 세그먼트 데이터 복사
+                if (seg->filesize > 0) {
+                    unsigned char *dst = (unsigned char *)seg->vmaddr;
+                    unsigned char *src = file_buffer + seg->fileoff;
+                    for (unsigned long long b = 0; b < seg->filesize; b++) {
+                        dst[b] = src[b];
+                    }
+                }
+
+                // PAGEZERO 세그먼트가 아닌 첫 가상 주소를 entry_point 기본값으로 지정
+                if (entry_point == 0 && seg->vmaddr != 0) {
+                    entry_point = seg->vmaddr;
+                }
+            }
+        }
+        cmd_ptr += cmdsize;
+    }
+
+    return entry_point;
+}
+

@@ -72,3 +72,31 @@ void fat32_list_root(void) {
         kputs(" BYTES)\n", 0x00FFFF00);
     }
 }
+
+int fat32_read_file(const char *filename, void *buffer, unsigned int max_len) {
+    unsigned char sector_buf[512];
+    unsigned long long root_lba = cluster_to_lba(bpb.root_cluster);
+
+    if (virtio_blk_read(root_lba, sector_buf) != 0) {
+        return -1;
+    }
+
+    fat32_dir_entry_t *entries = (fat32_dir_entry_t *)sector_buf;
+
+    for (int i = 0; i < 16; i++) {
+        if (entries[i].name[0] == 0x00) break;
+        if (entries[i].name[0] == 0xE5 || entries[i].attr == 0x0F) continue;
+
+        // 파일명 비교 (단순 8.3 포맷 기준)
+        if (memcmp(entries[i].name, filename, 7) == 0) {
+            unsigned int start_cluster = ((unsigned int)entries[i].first_cluster_high << 16) | entries[i].first_cluster_low;
+            unsigned long long file_lba = cluster_to_lba(start_cluster);
+
+            // 파일 데이터 섹터 읽기
+            if (virtio_blk_read(file_lba, buffer) == 0) {
+                return entries[i].file_size;
+            }
+        }
+    }
+    return -1; // 파일을 찾지 못함
+}
