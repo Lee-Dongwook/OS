@@ -35,6 +35,23 @@ void gdt_init(void) {
     gdtr.base  = (unsigned long long)&gdt;
 
     __asm__ __volatile__("lgdt %0" : : "m"(gdtr));
+    // UEFI가 사용하던 GDT를 교체했으므로 새 커널 코드/데이터 선택자로
+    // 세그먼트 레지스터를 다시 적재한다. 이후 IDT와 iretq가 0x08/0x10을
+    // 일관되게 사용할 수 있다.
+    __asm__ __volatile__(
+        "pushq $0x08\n\t"
+        "leaq 1f(%%rip), %%rax\n\t"
+        "pushq %%rax\n\t"
+        "lretq\n\t"
+        "1:\n\t"
+        "movw $0x10, %%ax\n\t"
+        "movw %%ax, %%ds\n\t"
+        "movw %%ax, %%es\n\t"
+        "movw %%ax, %%ss\n\t"
+        :
+        :
+        : "rax", "memory"
+    );
     kputs("[GDT] GLOBAL DESCRIPTOR TABLE LOADED\n", 0x00FFFF00);
 }
 

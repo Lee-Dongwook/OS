@@ -28,6 +28,11 @@ task_t *task_create(void) {
 
             // Task 전용 PML4 (페이지 테이블) 할당
             t->pml4 = (page_table_t *)pmm_alloc_page();
+            if (!t->pml4) {
+                t->task_id = 0;
+                t->is_active = 0;
+                return 0;
+            }
             for (int j = 0; j < 512; j++) {
                 t->pml4->entries[j] = 0;
             }
@@ -44,7 +49,7 @@ task_t *task_create(void) {
 
 // Task에 Mach Port 권한 추가
 int task_add_port(task_t *task, unsigned int port_id) {
-    if (!task || task->port_count >= MAX_TASK_PORTS) return -1;
+    if (!task || !task->is_active || port_id == 0 || task->port_count >= MAX_TASK_PORTS) return -1;
     task->ports[task->port_count++] = port_id;
     return 0;
 }

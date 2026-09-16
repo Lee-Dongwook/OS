@@ -14,6 +14,28 @@ static BootInfo *g_boot_info;
 static int g_cursor_x = 0;
 static int g_cursor_y = 0;
 
+static void scroll_if_needed(void) {
+  if (g_cursor_y + 16 <= (int)g_boot_info->height) {
+    return;
+  }
+
+  unsigned int *fb = g_boot_info->framebuffer;
+  unsigned int stride = g_boot_info->pixels_per_scan_line;
+  unsigned int rows_to_keep = g_boot_info->height > 16 ? g_boot_info->height - 16 : 0;
+
+  for (unsigned int y = 0; y < rows_to_keep; y++) {
+    for (unsigned int x = 0; x < stride; x++) {
+      fb[y * stride + x] = fb[(y + 16) * stride + x];
+    }
+  }
+  for (unsigned int y = rows_to_keep; y < g_boot_info->height; y++) {
+    for (unsigned int x = 0; x < stride; x++) {
+      fb[y * stride + x] = 0;
+    }
+  }
+  g_cursor_y = (int)rows_to_keep;
+}
+
 void console_init(BootInfo *boot_info) {
   g_boot_info = boot_info;
   g_cursor_x = 0;
@@ -24,6 +46,7 @@ void put_char(char c, unsigned int color) {
   if (c == '\n') {
         g_cursor_x = 0;
         g_cursor_y += 16;
+        scroll_if_needed();
         return;
   }
 
@@ -43,6 +66,7 @@ void put_char(char c, unsigned int color) {
     if (g_cursor_x >= g_boot_info->width) {
         g_cursor_x = 0;
         g_cursor_y += 16;
+        scroll_if_needed();
     }
 }
 
@@ -102,4 +126,3 @@ void kprintf(const char *fmt, unsigned long long arg, unsigned int color) {
         fmt++;
     }
 }
-

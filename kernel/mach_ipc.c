@@ -42,8 +42,23 @@ unsigned int mach_port_allocate(void) {
     return 0; // 할당 실패
 }
 
+int mach_port_destroy(unsigned int port_id) {
+    if (port_id == 0 || port_id >= MAX_PORTS || !port_table[port_id].is_active) {
+        return -1;
+    }
+
+    port_table[port_id].is_active = 0;
+    port_table[port_id].head = 0;
+    port_table[port_id].tail = 0;
+    port_table[port_id].count = 0;
+    return 0;
+}
+
 // 메시지 전송 (Port Queue에 push)
 int mach_msg_send(mach_message_t *msg) {
+    if (!msg) {
+        return -1;
+    }
     unsigned int dest_port = msg->header.msgh_remote_port;
 
     if (dest_port >= MAX_PORTS || !port_table[dest_port].is_active) {
@@ -66,7 +81,7 @@ int mach_msg_send(mach_message_t *msg) {
 
 // 메시지 수신 (Port Queue에서 pop)
 int mach_msg_receive(unsigned int port_id, mach_message_t *out_msg) {
-    if (port_id >= MAX_PORTS || !port_table[port_id].is_active) {
+    if (!out_msg || port_id >= MAX_PORTS || !port_table[port_id].is_active) {
         return -1; // 유효하지 않은 포트
     }
 
