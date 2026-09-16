@@ -8,36 +8,32 @@ extern void kput_dec(unsigned long long val, unsigned int color);
 static inline void wrmsr(unsigned int msr, unsigned long long val) {
     unsigned int low = (unsigned int)val;
     unsigned int high = (unsigned int)(val >> 32);
-    __asm__ __volatile__(
-        "push %%rax\n\t"
-        "push %%rcx\n\t"
-        "push %%rdx\n\t"
-        "movl %0, %%ecx\n\t"
-        "movl %1, %%eax\n\t"
-        "movl %2, %%edx\n\t"
-        "wrmsr\n\t"
-        "pop %%rdx\n\t"
-        "pop %%rcx\n\t"
-        "pop %%rax\n\t"
-        :
-        : "r"(msr), "r"(low), "r"(high)
-        : "memory"
-    );
+    __asm__ __volatile__("push %%rax\n\t"
+                         "push %%rcx\n\t"
+                         "push %%rdx\n\t"
+                         "movl %0, %%ecx\n\t"
+                         "movl %1, %%eax\n\t"
+                         "movl %2, %%edx\n\t"
+                         "wrmsr\n\t"
+                         "pop %%rdx\n\t"
+                         "pop %%rcx\n\t"
+                         "pop %%rax\n\t"
+                         :
+                         : "r"(msr), "r"(low), "r"(high)
+                         : "memory");
 }
 
 static inline unsigned long long rdmsr(unsigned int msr) {
     unsigned int low, high;
-    __asm__ __volatile__(
-        "push %%rcx\n\t"
-        "movl %2, %%ecx\n\t"
-        "rdmsr\n\t"
-        "movl %%eax, %0\n\t"
-        "movl %%edx, %1\n\t"
-        "pop %%rcx\n\t"
-        : "=r"(low), "=r"(high)
-        : "r"(msr)
-        : "memory"
-    );
+    __asm__ __volatile__("push %%rcx\n\t"
+                         "movl %2, %%ecx\n\t"
+                         "rdmsr\n\t"
+                         "movl %%eax, %0\n\t"
+                         "movl %%edx, %1\n\t"
+                         "pop %%rcx\n\t"
+                         : "=r"(low), "=r"(high)
+                         : "r"(msr)
+                         : "memory");
     return ((unsigned long long)high << 32) | low;
 }
 

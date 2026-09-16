@@ -49,7 +49,8 @@ task_t *task_create(void) {
 
 // Task에 Mach Port 권한 추가
 int task_add_port(task_t *task, unsigned int port_id) {
-    if (!task || !task->is_active || port_id == 0 || task->port_count >= MAX_TASK_PORTS) return -1;
+    if (!task || !task->is_active || port_id == 0 || task->port_count >= MAX_TASK_PORTS)
+        return -1;
     task->ports[task->port_count++] = port_id;
     return 0;
 }

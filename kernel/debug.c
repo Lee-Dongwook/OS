@@ -5,9 +5,7 @@
 // 확인할 수 있도록 콘솔 출력과 같은 내용을 전달한다.
 #define QEMU_DEBUG_PORT 0xE9
 
-void debug_putc(char c) {
-    outb(QEMU_DEBUG_PORT, (unsigned char)c);
-}
+void debug_putc(char c) { outb(QEMU_DEBUG_PORT, (unsigned char)c); }
 
 void debug_write(const char *str) {
     while (*str) {

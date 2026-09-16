@@ -7,6 +7,8 @@ LD        = $(shell brew --prefix lld 2>/dev/null)/bin/lld-link
 
 TARGET    = x86_64-unknown-windows-coff
 CFLAGS    = -target $(TARGET) -ffreestanding -fno-stack-protector -fshort-wchar -mno-red-zone -Wall -I.
+CLANG_TIDY ?= $(LLVM_PATH)/clang-tidy
+TIDY_FLAGS = --config-file=.clang-tidy --quiet
 
 # ==========================================
 # 디렉터리 및 자동 파일 스캔
@@ -27,6 +29,9 @@ KERNEL_OBJS = $(patsubst $(KERNEL_DIR)/%.c, $(BUILD_DIR)/%.o, $(C_SRCS)) \
               $(patsubst $(KERNEL_DIR)/%.s, $(BUILD_DIR)/%.o, $(ASM_SRCS))
 
 BOOT_OBJ   = $(BUILD_DIR)/boot_main.o
+
+# 빌드와 같은 타깃/컴파일 플래그로 정적 분석한다.
+LINT_SRCS  = $(BOOT_DIR)/main.c $(C_SRCS)
 
 OVMF       = $(shell find /opt/homebrew/Cellar/qemu /usr/local/Cellar/qemu -name "edk2-x86_64-code.fd" 2>/dev/null | head -n 1)
 
@@ -52,6 +57,13 @@ $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.c | $(BUILD_DIR)
 $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.s | $(BUILD_DIR)
 	$(CC) --target=x86_64-unknown-windows-gnu -c $< -o $@
 
+# `make` 및 개별 C 오브젝트 빌드 전에 자동으로 실행된다.
+$(BOOT_OBJ) $(patsubst $(KERNEL_DIR)/%.c,$(BUILD_DIR)/%.o,$(C_SRCS)) $(USERAPP): lint
+
+lint:
+	$(CLANG_TIDY) $(TIDY_FLAGS) $(LINT_SRCS) -- $(CFLAGS)
+	$(CLANG_TIDY) $(TIDY_FLAGS) $(KERNEL_DIR)/userapp.c -- -target x86_64-apple-macos -nostdlib -I.
+
 # 3. UEFI 바이너리 링킹
 $(EFI_IMAGE): $(BOOT_OBJ) $(KERNEL_OBJS)
 	$(LD) -subsystem:efi_application -entry:efi_main $^ -out:$(EFI_IMAGE)
@@ -75,4 +87,4 @@ run: $(DISK_IMG)
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run clean
+.PHONY: all run clean lint

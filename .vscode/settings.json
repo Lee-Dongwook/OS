@@ -1,0 +1,12 @@
+{
+  "clangd.arguments": [
+    "--clang-tidy",
+    "--background-index",
+    "--header-insertion=never",
+    "--fallback-style=file"
+  ],
+  "[c]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+    "editor.formatOnSave": true
+  }
+}

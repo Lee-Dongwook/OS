@@ -26,9 +26,7 @@ static int strings_equal(const char *left, const char *right) {
     return *left == *right;
 }
 
-unsigned int initramfs_file_count(void) {
-    return sizeof(files) / sizeof(files[0]) + (boot_file.contents ? 1 : 0);
-}
+unsigned int initramfs_file_count(void) { return sizeof(files) / sizeof(files[0]) + (boot_file.contents ? 1 : 0); }
 
 void initramfs_init(const char *boot_file_data, unsigned long long boot_file_size) {
     boot_file.contents = boot_file_data && *boot_file_data ? boot_file_data : 0;

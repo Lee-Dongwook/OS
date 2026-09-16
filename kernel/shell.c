@@ -1,9 +1,9 @@
 #include "shell.h"
 #include "initramfs.h"
+#include "mach_ipc.h"
 #include "pmm.h"
 #include "scheduler.h"
 #include "task.h"
-#include "mach_ipc.h"
 
 extern void kputs(const char *str, unsigned int color);
 extern void kput_dec(unsigned long long val, unsigned int color);
@@ -26,9 +26,7 @@ static int strings_equal(const char *left, const char *right) {
     return *left == *right;
 }
 
-static void print_prompt(void) {
-    kputs("os> ", SHELL_COLOR);
-}
+static void print_prompt(void) { kputs("os> ", SHELL_COLOR); }
 
 static void print_memory(unsigned long long bytes) {
     kput_dec(bytes / 1024 / 1024, SHELL_COLOR);
@@ -81,8 +79,7 @@ static void execute_command(void) {
             kputs(initramfs_file_at(i)->name, SUCCESS_COLOR);
             kputs("\n", SHELL_COLOR);
         }
-    } else if (line_length > 4 && line[0] == 'c' && line[1] == 'a' &&
-               line[2] == 't' && line[3] == ' ') {
+    } else if (line_length > 4 && line[0] == 'c' && line[1] == 'a' && line[2] == 't' && line[3] == ' ') {
         const initramfs_file_t *file = initramfs_find(&line[4]);
         if (file) {
             kputs(file->contents, SHELL_COLOR);

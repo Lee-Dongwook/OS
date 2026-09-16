@@ -67,6 +67,9 @@ brew install llvm lld qemu mtools dosfstools
 # EFI 실행 파일과 FAT32 디스크 이미지 생성
 make
 
+# clang-tidy 정적 분석만 실행
+make lint
+
 # QEMU에서 부팅
 make run
 
@@ -85,6 +88,24 @@ make clean
 정상적으로 부팅되면 화면에 `XNU OS KERNEL INIT...`, IPC 송수신 자가 검증, 시스템 콜 호출/복귀 메시지가 출력됩니다. 이후 APIC 타이머가 두 개의 예제 커널 스레드를 번갈아 실행합니다.
 
 `make run`으로 실행한 QEMU 창을 클릭하면 키보드로 셸을 사용할 수 있습니다.
+
+## VS Code 저장 시 린팅·포맷
+
+VS Code에서 **clangd** 확장(`llvm-vs-code-extensions.vscode-clangd`)을 설치한 뒤 이 저장소를 다시 열면 설정이 자동 적용됩니다.
+
+- C 파일을 저장하면 `clang-format`이 `.clang-format` 규칙으로 코드를 포맷합니다.
+- 편집 중 `clangd`가 `.clang-tidy` 규칙으로 진단을 표시합니다. 저장할 필요 없이 즉시 갱신되며, 경고 위치에서 Quick Fix를 선택해 안전한 수정안을 적용할 수 있습니다.
+- `compile_flags.txt`는 clangd가 커널·부트로더를 실제 빌드와 같은 freestanding 타깃으로 해석하게 합니다.
+
+## 자동 린팅
+
+`make`로 C 소스 오브젝트를 빌드하기 전에 `clang-tidy`가 자동 실행됩니다. 규칙은 저장소 루트의 `.clang-tidy`에서 관리하며, 별도로 확인하려면 다음 명령을 사용합니다.
+
+```bash
+make lint
+```
+
+현재 린트는 경고를 출력하지만 경고만으로 빌드를 중단하지 않습니다. CI에서 경고를 실패로 처리하려면 `TIDY_FLAGS`에 `--warnings-as-errors='*'`를 추가하면 됩니다.
 
 | 명령 | 설명 |
 | --- | --- |

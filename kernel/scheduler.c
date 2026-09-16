@@ -10,7 +10,8 @@ static int current_thread_index = -1;
 static int thread_count = 0;
 
 void thread_create(void (*entry_point)(void)) {
-    if (!entry_point || thread_count >= MAX_THREADS) return;
+    if (!entry_point || thread_count >= MAX_THREADS)
+        return;
 
     thread_t *t = &threads[thread_count];
     t->id = thread_count + 1;
@@ -23,13 +24,17 @@ void thread_create(void (*entry_point)(void)) {
     sp--;
 
     // 같은 권한 레벨(Ring 0)로 iretq 하면 RIP, CS, RFLAGS만 pop한다.
-    sp--; *sp = 0x202;            // RFLAGS (Interrupt enabled)
-    sp--; *sp = 0x08;             // CS (Kernel Code)
-    sp--; *sp = (unsigned long long)entry_point; // RIP
+    sp--;
+    *sp = 0x202; // RFLAGS (Interrupt enabled)
+    sp--;
+    *sp = 0x08; // CS (Kernel Code)
+    sp--;
+    *sp = (unsigned long long)entry_point; // RIP
 
     // context_switch.s가 복원하는 범용 레지스터 15개
     for (int i = 0; i < 15; i++) {
-        sp--; *sp = 0;
+        sp--;
+        *sp = 0;
     }
 
     t->rsp = (unsigned long long)sp;
@@ -50,7 +55,8 @@ void scheduler_init(void) {
 }
 
 unsigned long long schedule(unsigned long long current_rsp) {
-    if (thread_count == 0) return current_rsp;
+    if (thread_count == 0)
+        return current_rsp;
 
     // 현재 스레드의 스택 포인터 저장
     if (current_thread_index >= 0) {
@@ -65,6 +71,4 @@ unsigned long long schedule(unsigned long long current_rsp) {
     return next->rsp;
 }
 
-int scheduler_thread_count(void) {
-    return thread_count;
-}
+int scheduler_thread_count(void) { return thread_count; }

@@ -10,7 +10,7 @@ page_table_t *kernel_pml4 = 0;
 void vmm_map_page(page_table_t *pml4, unsigned long long virt, unsigned long long phys, unsigned long long flags) {
     unsigned long long pml4_idx = (virt >> 39) & 0x1FF;
     unsigned long long pdpt_idx = (virt >> 30) & 0x1FF;
-    unsigned long long pd_idx   = (virt >> 21) & 0x1FF;
+    unsigned long long pd_idx = (virt >> 21) & 0x1FF;
     unsigned long long pt_idx = (virt >> 12) & 0x1FF;
 
     // 사용자 페이지는 모든 상위 페이지 테이블 엔트리에도 USER 비트가 있어야 한다.
@@ -19,7 +19,8 @@ void vmm_map_page(page_table_t *pml4, unsigned long long virt, unsigned long lon
     // 1. PML4 -> PDPT
     if (!(pml4->entries[pml4_idx] & PAGE_PRESENT)) {
         page_table_t *pdpt = (page_table_t *)pmm_alloc_page();
-        for (int i = 0; i < 512; i++) pdpt->entries[i] = 0;
+        for (int i = 0; i < 512; i++)
+            pdpt->entries[i] = 0;
         pml4->entries[pml4_idx] = (unsigned long long)pdpt | table_flags;
     } else if (flags & PAGE_USER) {
         pml4->entries[pml4_idx] |= PAGE_USER;
@@ -29,7 +30,8 @@ void vmm_map_page(page_table_t *pml4, unsigned long long virt, unsigned long lon
     // 2. PDPT -> PD
     if (!(pdpt->entries[pdpt_idx] & PAGE_PRESENT)) {
         page_table_t *pd = (page_table_t *)pmm_alloc_page();
-        for (int i = 0; i < 512; i++) pd->entries[i] = 0;
+        for (int i = 0; i < 512; i++)
+            pd->entries[i] = 0;
         pdpt->entries[pdpt_idx] = (unsigned long long)pd | table_flags;
     } else if (flags & PAGE_USER) {
         pdpt->entries[pdpt_idx] |= PAGE_USER;
@@ -39,7 +41,8 @@ void vmm_map_page(page_table_t *pml4, unsigned long long virt, unsigned long lon
     // 3. PD -> PT
     if (!(pd->entries[pd_idx] & PAGE_PRESENT)) {
         page_table_t *pt = (page_table_t *)pmm_alloc_page();
-        for (int i = 0; i < 512; i++) pt->entries[i] = 0;
+        for (int i = 0; i < 512; i++)
+            pt->entries[i] = 0;
         pd->entries[pd_idx] = (unsigned long long)pt | table_flags;
     } else if (flags & PAGE_USER) {
         pd->entries[pd_idx] |= PAGE_USER;
@@ -50,9 +53,7 @@ void vmm_map_page(page_table_t *pml4, unsigned long long virt, unsigned long lon
     pt->entries[pt_idx] = (phys & ~0xFFFULL) | flags | PAGE_PRESENT;
 }
 
-page_table_t *vmm_kernel_pml4(void) {
-    return kernel_pml4;
-}
+page_table_t *vmm_kernel_pml4(void) { return kernel_pml4; }
 
 void vmm_init(BootInfo *boot_info) {
     // PML4 테이블 생성
@@ -70,7 +71,7 @@ void vmm_init(BootInfo *boot_info) {
     // B. 프레임버퍼 (GOP VRAM) 영역 Identity Mapping (화면 출력을 지속하기 위함)
     unsigned long long fb_base = (unsigned long long)boot_info->framebuffer;
     unsigned long long fb_size = boot_info->height * boot_info->pixels_per_scan_line * sizeof(unsigned int);
-    
+
     for (unsigned long long addr = fb_base; addr < fb_base + fb_size; addr += PAGE_SIZE) {
         vmm_map_page(kernel_pml4, addr, addr, PAGE_WRITABLE);
     }

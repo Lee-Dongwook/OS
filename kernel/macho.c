@@ -1,7 +1,7 @@
 #include "macho.h"
 #include "fat32.h"
-#include "vmm.h"
 #include "pmm.h"
+#include "vmm.h"
 
 extern void *pmm_alloc_page(void);
 extern void kputs(const char *str, unsigned int color);
@@ -65,7 +65,8 @@ int macho_load_binary(const unsigned char *binary_data, unsigned long long *entr
                     // 데이터 복사 및 BSS 영역 초기화
                     if (p * 0x1000 < seg->filesize) {
                         unsigned long long copy_len = seg->filesize - (p * 0x1000);
-                        if (copy_len > 0x1000) copy_len = 0x1000;
+                        if (copy_len > 0x1000)
+                            copy_len = 0x1000;
                         memcpy(phys, binary_data + seg->fileoff + (p * 0x1000), copy_len);
                         if (copy_len < 0x1000) {
                             memset((unsigned char *)phys + copy_len, 0, 0x1000 - copy_len);
@@ -129,24 +130,26 @@ unsigned long long macho_load_from_fat32(const char *filename) {
                 kput_hex(seg->vmaddr, 0x0000FFFF);
                 kputs("\n", 0x0000FFFF);
 
-                // 메모리 할당 및 VMM 매핑 (Ring 3 접근 허용: PAGE_USER | PAGE_WRITABLE)
-                for (unsigned long long offset = 0; offset < seg->vmsize; offset += PAGE_SIZE) {
-                    void *phys_page = pmm_alloc_page();
-                    vmm_map_page(kernel_pml4, seg->vmaddr + offset, (unsigned long long)phys_page, 0x07); // Present | Writable | User
-                }
-
-                // 파일 세그먼트 데이터 복사
-                if (seg->filesize > 0) {
-                    unsigned char *dst = (unsigned char *)seg->vmaddr;
-                    unsigned char *src = file_buffer + seg->fileoff;
-                    for (unsigned long long b = 0; b < seg->filesize; b++) {
-                        dst[b] = src[b];
+                if (seg->vmaddr != 0) {
+                    for (unsigned long long offset = 0; offset < seg->vmsize; offset += PAGE_SIZE) {
+                        void *phys_page = pmm_alloc_page();
+                        vmm_map_page(kernel_pml4, seg->vmaddr + offset, (unsigned long long)phys_page,
+                                     0x07); // Present | Writable | User
                     }
-                }
 
-                // PAGEZERO 세그먼트가 아닌 첫 가상 주소를 entry_point 기본값으로 지정
-                if (entry_point == 0 && seg->vmaddr != 0) {
-                    entry_point = seg->vmaddr;
+                    // 파일 세그먼트 데이터 복사
+                    if (seg->filesize > 0) {
+                        unsigned char *dst = (unsigned char *)seg->vmaddr;
+                        unsigned char *src = file_buffer + seg->fileoff;
+                        for (unsigned long long b = 0; b < seg->filesize; b++) {
+                            dst[b] = src[b];
+                        }
+                    }
+
+                    // PAGEZERO 세그먼트가 아닌 첫 가상 주소를 entry_point 기본값으로 지정
+                    if (entry_point == 0 && seg->vmaddr != 0) {
+                        entry_point = seg->vmaddr;
+                    }
                 }
             }
         }
@@ -155,4 +158,3 @@ unsigned long long macho_load_from_fat32(const char *filename) {
 
     return entry_point;
 }
-
