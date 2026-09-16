@@ -15,6 +15,8 @@ extern void kput_dec(unsigned long long val, unsigned int color);
 
 extern void pmm_init(void *memory_map, unsigned long long map_size, unsigned long long descriptor_size);
 extern void vmm_init(BootInfo *boot_info);
+extern void gdt_init(void);
+extern void idt_init(void);
 
 void kernel_main(BootInfo *boot_info) {
   unsigned int *fb = boot_info->framebuffer;
@@ -34,7 +36,13 @@ void kernel_main(BootInfo *boot_info) {
 
     vmm_init(boot_info);
 
+    gdt_init();
+    idt_init();
+
     kputs("\n[KERNEL] PAGE TABLE SWITCH SUCCESSFUL!\n", 0x00FFFFFF);
+
+    kputs("[TEST] TRIGGERING INTERRUPT 0x03...\n", 0x00FFFF00);
+    __asm__ __volatile__("int $3");
 
     while (1) {
         __asm__ __volatile__("hlt");
