@@ -5,6 +5,7 @@
 #include "keyboard.h"
 #include "shell.h"
 #include "initramfs.h"
+#include "macho.h"
 
 extern void console_init(BootInfo *boot_info);
 extern void kputs(const char *str, unsigned int color);
@@ -106,29 +107,27 @@ void kernel_main(BootInfo *boot_info) {
 
     kputs("\n[TEST] PREPARING RING 3 USERLAND ENTRY...\n", 0x00FFFF00);
 
-    void *user_code_phys = pmm_alloc_page();
-    void *user_stack_phys = pmm_alloc_page();
-    if (!user_code_phys || !user_stack_phys) {
-        kputs("[TEST] USERLAND PAGE ALLOCATION FAILED\n", 0x00FF0000);
-        while (1) {
-            __asm__ __volatile__("hlt");
-        }
-    }
+    unsigned long long user_entry = 0;
 
-    vmm_map_page(vmm_kernel_pml4(), 0x400000, (unsigned long long)user_code_phys,
-                 PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
+    void *user_stack_phys = pmm_alloc_page();
     vmm_map_page(vmm_kernel_pml4(), 0x500000, (unsigned long long)user_stack_phys,
                  PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
 
-    // PMM 페이지는 하위 메모리 identity mapping을 통해 커널에서도 접근 가능하다.
-    unsigned char *uprog = (unsigned char *)user_code_phys;
-    uprog[0] = 0x48; uprog[1] = 0xC7; uprog[2] = 0xC0; uprog[3] = 0x01; uprog[4] = 0x00; uprog[5] = 0x00; uprog[6] = 0x00; // mov $1, %rax
-    uprog[7] = 0x0F; uprog[8] = 0x05;                                                                                    // syscall
-    uprog[9] = 0xEB; uprog[10] = 0xFE;
+    if (user_entry == 0) {
+        void *user_code_phys = pmm_alloc_page();
+        vmm_map_page(vmm_kernel_pml4(), 0x400000, (unsigned long long)user_code_phys,
+                     PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
 
-    kputs("[TEST] JUMPING TO RING 3 USERLAND (0x400000)...\n", 0x0000FF00);
+        unsigned char *uprog = (unsigned char *)0x400000;
+        uprog[0] = 0x48; uprog[1] = 0xC7; uprog[2] = 0xC0; uprog[3] = 0x01; uprog[4] = 0x00; uprog[5] = 0x00; uprog[6] = 0x00; // mov $1, %rax
+        uprog[7] = 0x0F; uprog[8] = 0x05;                                                                                    // syscall
+        uprog[9] = 0xEB; uprog[10] = 0xFE;                                                                                   // jmp .
 
-    enter_user_mode(0x400000, 0x501000);
+        user_entry = 0x400000;
+    }
+
+    kputs("\n[USERLAND] SWITCHING TO RING 3 USER MODE...\n", 0x0000FF00);
+    enter_user_mode(user_entry, 0x501000);
 
     while (1) {
         __asm__ __volatile__("hlt");
