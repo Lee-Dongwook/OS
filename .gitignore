@@ -45,3 +45,5 @@ cmake-build-*/
 *.log
 *.tmp
 *.swp
+
+plan/

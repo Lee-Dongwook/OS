@@ -8,6 +8,8 @@ static fat32_bpb_t bpb;
 static unsigned long long fat_start_lba = 0;
 static unsigned long long data_start_lba = 0;
 
+static unsigned char sector_buf[512] __attribute__((aligned(16)));
+
 static unsigned long long cluster_to_lba(unsigned int cluster) {
     return data_start_lba + (unsigned long long)(cluster - 2) * bpb.sectors_per_cluster;
 }
@@ -44,15 +46,14 @@ int fat32_init(void) {
 }
 
 void fat32_list_root(void) {
-    unsigned char buffer[512];
     unsigned long long root_lba = cluster_to_lba(bpb.root_cluster);
 
-    if (virtio_blk_read(root_lba, buffer) != 0) {
+    if (virtio_blk_read(root_lba, sector_buf) != 0) {
         kputs("[FAT32] ERROR: FAILED TO READ ROOT DIRECTORY\n", 0x00FF0000);
         return;
     }
 
-    fat32_dir_entry_t *entries = (fat32_dir_entry_t *)buffer;
+    fat32_dir_entry_t *entries = (fat32_dir_entry_t *)sector_buf;
     kputs("\n[FAT32] ROOT DIRECTORY LISTINGS:\n", 0x0000FF00);
 
     for (int i = 0; i < 16; i++) {
@@ -78,7 +79,6 @@ void fat32_list_root(void) {
 }
 
 int fat32_read_file(const char *filename, void *buffer, unsigned int max_len) {
-    unsigned char sector_buf[512];
     unsigned long long root_lba = cluster_to_lba(bpb.root_cluster);
 
     if (virtio_blk_read(root_lba, sector_buf) != 0) {

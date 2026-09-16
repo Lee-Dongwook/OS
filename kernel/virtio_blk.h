@@ -43,6 +43,12 @@ typedef struct {
     unsigned long long sector;
 } __attribute__((packed)) virtio_blk_req_t;
 
+typedef struct {
+    unsigned int   type;     // VIRTIO_BLK_T_IN (0)
+    unsigned int   ioprio;   // 0
+    unsigned long long sector; // 읽을 LBA 섹터
+} __attribute__((packed)) virtio_blk_req_h;
+
 void virtio_blk_init(void);
 int virtio_blk_read(unsigned long long sector, void *buffer);
 int virtio_blk_write(unsigned long long sector, const void *buffer);

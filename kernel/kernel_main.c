@@ -11,7 +11,7 @@ extern void pmm_init(void *memory_map, unsigned long long map_size, unsigned lon
 extern void vmm_init(BootInfo *boot_info);
 extern void gdt_init(void);
 extern void idt_init(void);
-extern void enter_userland(unsigned long long entry_point, unsigned long long user_stack);
+extern void enter_user_mode(unsigned long long entry_point, unsigned long long user_stack);
 extern page_table_t *kernel_pml4;
 
 void kernel_main(BootInfo *boot_info) {
@@ -42,7 +42,7 @@ void kernel_main(BootInfo *boot_info) {
             void *user_stack_page = pmm_alloc_page();
             vmm_map_page(kernel_pml4, user_stack_top - PAGE_SIZE, (unsigned long long)user_stack_page, 0x07);
 
-            enter_userland(user_entry, user_stack_top);
+            enter_user_mode(user_entry, user_stack_top);
         }
     } else {
         kputs("[DEBUG] FAT32 INIT FAILED!\n", 0x00FF0000);

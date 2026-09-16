@@ -1,7 +1,7 @@
 #include "virtio_blk.h"
+#include "pmm.h"
 #include "vmm.h"
 
-extern void *pmm_alloc_page(void);
 extern void kputs(const char *str, unsigned int color);
 extern void kput_hex(unsigned long long val, unsigned int color);
 
@@ -10,6 +10,8 @@ static vring_desc_t *desc_table = 0;
 static vring_avail_t *avail_ring = 0;
 static vring_used_t *used_ring = 0;
 static unsigned short queue_size = 0;
+static virtio_blk_req_h req_header __attribute__((aligned(16)));
+static volatile unsigned char req_status __attribute__((aligned(16)));
 
 static inline unsigned int pci_read32(unsigned char bus, unsigned char slot, unsigned char func, unsigned char offset) {
     unsigned int address =
@@ -65,12 +67,45 @@ void virtio_blk_init(void) {
                 outw(virtio_io_base + 14, 0);
                 queue_size = inw(virtio_io_base + 12);
 
+                if (queue_size < 3) {
+                    kputs("[VIRTIO-BLK] UNSUPPORTED QUEUE SIZE\n", 0x00FF0000);
+                    virtio_io_base = 0;
+                    return;
+                }
+
+                unsigned long long desc_bytes = (unsigned long long)queue_size * sizeof(vring_desc_t);
+                unsigned long long avail_bytes = sizeof(unsigned short) * (3 + queue_size);
+                unsigned long long used_off = (desc_bytes + avail_bytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1ULL);
+                unsigned long long used_bytes = sizeof(unsigned short) * 2 +
+                                                (unsigned long long)queue_size * sizeof(vring_used_elem_t);
+                unsigned long long queue_bytes = used_off + used_bytes;
+                unsigned long long page_count = (queue_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+
                 void *vq_page = pmm_alloc_page();
+                if (!vq_page) {
+                    kputs("[VIRTIO-BLK] FAILED TO ALLOCATE CONTIGUOUS QUEUE MEMORY\n", 0x00FF0000);
+                    virtio_io_base = 0;
+                    return;
+                }
+
+                for (unsigned long long page = 1; page < page_count; page++) {
+                    void *next_page = pmm_alloc_page();
+                    if (!next_page ||
+                        (unsigned long long)next_page != (unsigned long long)vq_page + page * PAGE_SIZE) {
+                        kputs("[VIRTIO-BLK] FAILED TO ALLOCATE CONTIGUOUS QUEUE MEMORY\n", 0x00FF0000);
+                        virtio_io_base = 0;
+                        return;
+                    }
+                }
+
+                unsigned char *queue_memory = (unsigned char *)vq_page;
+                for (unsigned long long i = 0; i < queue_bytes; i++) {
+                    queue_memory[i] = 0;
+                }
+
                 desc_table = (vring_desc_t *)vq_page;
                 avail_ring = (vring_avail_t *)((unsigned char *)vq_page + queue_size * sizeof(vring_desc_t));
 
-                unsigned long long used_off =
-                    (sizeof(vring_desc_t) * queue_size + sizeof(unsigned short) * (3 + queue_size) + 4095) & ~4095ULL;
                 used_ring = (vring_used_t *)((unsigned char *)vq_page + used_off);
 
                 outl(virtio_io_base + 8, ((unsigned long long)vq_page) >> 12);
@@ -85,19 +120,17 @@ void virtio_blk_init(void) {
 }
 
 int virtio_blk_read(unsigned long long sector, void *buffer) {
-    if (!virtio_io_base)
+    if (!virtio_io_base || !desc_table || !avail_ring || !used_ring || !buffer)
         return -1;
 
-    static virtio_blk_req_t req;
-    static unsigned char status;
+    req_header.type = 0;
+    req_header.ioprio = 0;
+    req_header.sector = sector;
+    req_status = 0xFF;
 
-    req.type = VIRTIO_BLK_T_IN;
-    req.reserved = 0;
-    req.sector = sector;
-
-    desc_table[0].addr = (unsigned long long)&req;
-    desc_table[0].len = sizeof(virtio_blk_req_t);
-    desc_table[0].flags = VRING_DESC_F_NEXT;
+    desc_table[0].addr = (unsigned long long)&req_header;
+    desc_table[0].len = sizeof(virtio_blk_req_h);
+    desc_table[0].flags = 1;
     desc_table[0].next = 1;
 
     desc_table[1].addr = (unsigned long long)buffer;
@@ -105,19 +138,24 @@ int virtio_blk_read(unsigned long long sector, void *buffer) {
     desc_table[1].flags = VRING_DESC_F_NEXT | VRING_DESC_F_WRITE;
     desc_table[1].next = 2;
 
-    desc_table[2].addr = (unsigned long long)&status;
+    desc_table[2].addr = (unsigned long long)&req_status;
     desc_table[2].len = 1;
     desc_table[2].flags = VRING_DESC_F_WRITE;
     desc_table[2].next = 0;
 
     avail_ring->ring[avail_ring->idx % queue_size] = 0;
+    __asm__ __volatile__("" ::: "memory");
     avail_ring->idx++;
 
+    // QEMU 명령줄의 virtio-blk-pci는 legacy PCI I/O 인터페이스를 사용한다.
+    // Queue Notify 레지스터는 I/O base + 16이며, MMIO 주소가 아니다.
     outw(virtio_io_base + 16, 0);
 
-    while (used_ring->idx != avail_ring->idx) {
+    while (req_status == 0xFF) {
         __asm__ __volatile__("pause");
     }
 
-    return (status == 0) ? 0 : -1;
+    __asm__ __volatile__("" ::: "memory");
+
+    return (req_status == 0) ? 0 : -1;
 }
