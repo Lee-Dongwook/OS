@@ -11,6 +11,7 @@ extern void pmm_init(void *memory_map, unsigned long long map_size, unsigned lon
 extern void vmm_init(BootInfo *boot_info);
 extern void gdt_init(void);
 extern void idt_init(void);
+extern void apic_init(void);
 
 void thread_a(void) {
     while (1) {
@@ -51,8 +52,11 @@ void kernel_main(BootInfo *boot_info) {
     scheduler_init();
     thread_create(thread_a);
     thread_create(thread_b);
+    apic_init();
 
-    kputs("\n[KERNEL] INITIALIZATION COMPLETE!\n", 0x00FFFFFF);
+    kputs("\n[KERNEL] ENABLING INTERRUPTS & MULTITASKING...\n", 0x00FFFFFF);
+
+    __asm__ __volatile__("sti");
 
     while (1) {
         __asm__ __volatile__("hlt");

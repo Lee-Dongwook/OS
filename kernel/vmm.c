@@ -61,6 +61,8 @@ void vmm_init(BootInfo *boot_info) {
         vmm_map_page(kernel_pml4, addr, addr, PAGE_WRITABLE);
     }
 
+    vmm_map_page(kernel_pml4, 0xFEE00000ULL, 0xFEE00000ULL, PAGE_WRITABLE);
+
     kputs("[VMM] RAM & FRAMEBUFFER MAPPING COMPLETE\n", 0x00FFFF00);
 
     // CR3 레지스터 로드 (새로운 페이징 매핑으로 전환)
