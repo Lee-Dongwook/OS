@@ -5,6 +5,7 @@ extern void keyboard_isr(void);
 extern void apic_send_eoi(void);
 extern void kputs(const char *str, unsigned int color);
 extern void kput_hex(unsigned long long val, unsigned int color);
+extern void user_fault_recovery(void);
 
 static struct {
     gdt_entry_t null_desc;
@@ -109,6 +110,24 @@ __attribute__((interrupt)) void double_fault_handler(struct interrupt_frame *fra
     }
 }
 
+// Page fault는 error code를 포함하므로 일반 예외 핸들러와 다른 ABI를 사용한다.
+// 사용자 CPL에서 발생한 fault만 복구 trampoline으로 돌려 보내며, 커널 fault는
+// 기존처럼 정지해 진짜 커널 버그를 숨기지 않는다.
+__attribute__((interrupt)) void page_fault_handler(struct interrupt_frame *frame,
+                                                   unsigned long long error_code) {
+    (void)error_code;
+    if ((frame->cs & 0x3) == 0x3) {
+        frame->ip = (unsigned long long)user_fault_recovery;
+        frame->cs = 0x08;
+        frame->flags = 0x202;
+        return;
+    }
+
+    while (1) {
+        __asm__ __volatile__("hlt");
+    }
+}
+
 // IDT 엔트리 설정 함수
 void idt_set_gate(unsigned char vector, void *handler, unsigned char flags) {
     unsigned long long addr = (unsigned long long)handler;
@@ -133,6 +152,7 @@ void idt_init(void) {
 
     // Double Fault (8번) 핸들러 등록
     idt_set_gate(8, (void *)double_fault_handler, 0x8E);
+    idt_set_gate(14, (void *)page_fault_handler, 0x8E);
     idt_set_gate(32, (void *)timer_isr, 0x8E);
     idt_set_gate(33, (void *)keyboard_isr, 0x8E);
 

@@ -6,7 +6,7 @@
 
 enter_user_mode:
     # Windows x64 ABI (이 커널의 C 컴파일 타깃):
-    # RCX: User RIP (Entry Point), RDX: User RSP (User Stack)
+    # RCX: User RIP, RDX: User RSP, R8: Task 전용 CR3
 
     # CS=0x23 (User Code), SS=0x1B (User Data)
     mov $0x1B, %ax
@@ -22,6 +22,8 @@ enter_user_mode:
     pushq $0x23        # CS (User Code Selector)
     pushq %rcx         # RIP (User Entry Point)
 
+    # 새 CR3도 커널의 supervisor 매핑을 포함하므로 iretq 전 커널 스택은 유효하다.
+    mov %r8, %cr3
     iretq              # Ring 3로 전환
 
 enter_userland:

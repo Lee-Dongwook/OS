@@ -6,8 +6,6 @@
 extern void *pmm_alloc_page(void);
 extern void kputs(const char *str, unsigned int color);
 extern void kput_hex(unsigned long long val, unsigned int color);
-extern page_table_t *kernel_pml4;
-
 static unsigned char file_buffer[64 * 1024];
 
 static void memcpy(void *dest, const void *src, unsigned long long n) {
@@ -25,76 +23,115 @@ static void memset(void *dest, int val, unsigned long long n) {
     }
 }
 
-int macho_load_binary(const unsigned char *binary_data, unsigned long long *entry_point) {
-    mach_header_64_t *header = (mach_header_64_t *)binary_data;
+static int range_is_valid(unsigned long long offset, unsigned long long length,
+                          unsigned long long total_size) {
+    return offset <= total_size && length <= total_size - offset;
+}
 
-    // Magic 넘버 검증 (0xFEEDFACF)
-    if (header->magic != MH_MAGIC_64) {
-        kputs("[MACHO] ERROR: INVALID MACH-O 64-BIT MAGIC\n", 0x00FF0000);
+int macho_load_binary(const unsigned char *binary_data, unsigned long long binary_size,
+                      page_table_t *target_pml4, unsigned long long *entry_point) {
+    if (!binary_data || !target_pml4 || !entry_point || binary_size < sizeof(mach_header_64_t)) {
         return -1;
     }
 
-    kputs("[MACHO] VALID MACH-O HEADER DETECTED\n", 0x00FFFF00);
+    const mach_header_64_t *header = (const mach_header_64_t *)binary_data;
+    if (header->magic != MH_MAGIC_64 ||
+        !range_is_valid(sizeof(*header), header->sizeofcmds, binary_size)) {
+        kputs("[MACHO] ERROR: INVALID OR TRUNCATED HEADER\n", 0x00FF0000);
+        return -1;
+    }
 
-    const unsigned char *ptr = binary_data + sizeof(mach_header_64_t);
-    *entry_point = 0;
+    unsigned long long command_offset = sizeof(*header);
+    unsigned long long command_end = command_offset + header->sizeofcmds;
+    unsigned long long requested_entry = 0;
+    unsigned long long executable_start = 0;
+    unsigned long long executable_end = 0;
 
-    for (unsigned int i = 0; i < header->ncmds; i++) {
-        load_command_t *cmd = (load_command_t *)ptr;
-
-        if (cmd->cmd == LC_SEGMENT_64) {
-            segment_command_64_t *seg = (segment_command_64_t *)ptr;
-
-            if (seg->vmsize > 0) {
-                kputs("[MACHO] LOADING SEGMENT: ", 0x00FFFF00);
-                kputs(seg->segname, 0x00FFFF00);
-                kputs(" AT VMADDR: ", 0x00FFFF00);
-                kput_hex(seg->vmaddr, 0x00FFFF00);
-                kputs("\n", 0x00FFFF00);
-
-                // 필요한 페이지 단위 크기 계산
-                unsigned long long pages = (seg->vmsize + 0xFFF) / 0x1000;
-                for (unsigned long long p = 0; p < pages; p++) {
-                    unsigned long long virt = seg->vmaddr + (p * 0x1000);
-                    void *phys = pmm_alloc_page();
-
-                    // 유저 접근 권한 페이지 매핑
-                    vmm_map_page(vmm_kernel_pml4(), virt, (unsigned long long)phys,
-                                 PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER);
-
-                    // 데이터 복사 및 BSS 영역 초기화
-                    if (p * 0x1000 < seg->filesize) {
-                        unsigned long long copy_len = seg->filesize - (p * 0x1000);
-                        if (copy_len > 0x1000)
-                            copy_len = 0x1000;
-                        memcpy(phys, binary_data + seg->fileoff + (p * 0x1000), copy_len);
-                        if (copy_len < 0x1000) {
-                            memset((unsigned char *)phys + copy_len, 0, 0x1000 - copy_len);
-                        }
-                    } else {
-                        memset(phys, 0, 0x1000);
-                    }
-                }
-            }
-        } else if (cmd->cmd == LC_MAIN) {
-            entry_point_command_t *ep = (entry_point_command_t *)ptr;
-            *entry_point = ep->entryoff;
+    for (unsigned int index = 0; index < header->ncmds; index++) {
+        if (!range_is_valid(command_offset, sizeof(load_command_t), command_end)) {
+            return -1;
+        }
+        const load_command_t *command = (const load_command_t *)(binary_data + command_offset);
+        if (command->cmdsize < sizeof(*command) ||
+            !range_is_valid(command_offset, command->cmdsize, command_end)) {
+            return -1;
         }
 
-        ptr += cmd->cmdsize;
+        if (command->cmd == LC_SEGMENT_64) {
+            if (command->cmdsize < sizeof(segment_command_64_t)) {
+                return -1;
+            }
+            const segment_command_64_t *segment = (const segment_command_64_t *)command;
+            if (!range_is_valid(segment->fileoff, segment->filesize, binary_size) ||
+                segment->filesize > segment->vmsize ||
+                segment->vmaddr + segment->vmsize < segment->vmaddr) {
+                return -1;
+            }
+
+            if (segment->vmsize > 0 && segment->vmaddr != 0) {
+                unsigned long long page_start = segment->vmaddr & ~(PAGE_SIZE - 1ULL);
+                unsigned long long page_end = (segment->vmaddr + segment->vmsize + PAGE_SIZE - 1ULL) &
+                                              ~(PAGE_SIZE - 1ULL);
+                unsigned long long flags = PAGE_PRESENT | PAGE_USER;
+                if (segment->initprot & VM_PROT_WRITE) {
+                    flags |= PAGE_WRITABLE;
+                }
+
+                for (unsigned long long virtual_page = page_start; virtual_page < page_end;
+                     virtual_page += PAGE_SIZE) {
+                    void *physical_page = pmm_alloc_page();
+                    if (!physical_page) {
+                        return -1;
+                    }
+                    memset(physical_page, 0, PAGE_SIZE);
+                    vmm_map_page(target_pml4, virtual_page,
+                                 (unsigned long long)physical_page, flags | PAGE_WRITABLE);
+
+                    unsigned long long segment_end = segment->vmaddr + segment->filesize;
+                    unsigned long long copy_start = virtual_page > segment->vmaddr ?
+                                                        virtual_page : segment->vmaddr;
+                    unsigned long long page_end = virtual_page + PAGE_SIZE;
+                    unsigned long long copy_end = page_end < segment_end ? page_end : segment_end;
+                    if (copy_start < copy_end) {
+                        memcpy((unsigned char *)physical_page + (copy_start - virtual_page),
+                               binary_data + segment->fileoff + (copy_start - segment->vmaddr),
+                               copy_end - copy_start);
+                    }
+                }
+
+                for (unsigned long long virtual_page = page_start; virtual_page < page_end;
+                     virtual_page += PAGE_SIZE) {
+                    if (vmm_protect_page(target_pml4, virtual_page, flags) != 0) {
+                        return -1;
+                    }
+                }
+                if (segment->initprot & VM_PROT_EXECUTE) {
+                    executable_start = segment->vmaddr;
+                    executable_end = segment->vmaddr + segment->vmsize;
+                }
+            }
+        } else if (command->cmd == LC_MAIN && command->cmdsize >= sizeof(entry_point_command_t)) {
+            requested_entry = ((const entry_point_command_t *)command)->entryoff;
+        } else if (command->cmd == LC_UNIXTHREAD && command->cmdsize >= sizeof(unixthread_command_64_t)) {
+            requested_entry = ((const unixthread_command_64_t *)command)->rip;
+        }
+
+        command_offset += command->cmdsize;
     }
 
-    if (*entry_point != 0) {
-        kputs("[MACHO] ENTRY POINT LOADED: ", 0x0000FF00);
-        kput_hex(*entry_point, 0x0000FF00);
-        kputs("\n", 0x0000FF00);
-        return 0;
+    if (requested_entry == 0 || requested_entry < executable_start || requested_entry >= executable_end) {
+        kputs("[MACHO] ERROR: MISSING OR INVALID ENTRY POINT\n", 0x00FF0000);
+        return -1;
     }
 
-    return -1;
+    *entry_point = requested_entry;
+    kputs("[MACHO] ENTRY POINT LOADED: ", 0x0000FF00);
+    kput_hex(*entry_point, 0x0000FF00);
+    kputs("\n", 0x0000FF00);
+    return 0;
 }
 
-unsigned long long macho_load_from_fat32(const char *filename) {
+unsigned long long macho_load_from_fat32(const char *filename, page_table_t *target_pml4) {
     kputs("[MACHO-LOADER] LOADING FILE FROM FAT32: ", 0x00FFFF00);
     kputs(filename, 0x00FFFF00);
     kputs("\n", 0x00FFFF00);
@@ -105,56 +142,10 @@ unsigned long long macho_load_from_fat32(const char *filename) {
         return 0;
     }
 
-    mach_header_64_t *header = (mach_header_64_t *)file_buffer;
-    if (header->magic != MH_MAGIC_64) {
-        kputs("[MACHO-LOADER] ERROR: INVALID MACH-O MAGIC NUMBER\n", 0x00FF0000);
+    unsigned long long entry_point = 0;
+    if (macho_load_binary(file_buffer, (unsigned long long)read_bytes, target_pml4, &entry_point) != 0) {
+        kputs("[MACHO-LOADER] ERROR: IMAGE VALIDATION FAILED\n", 0x00FF0000);
         return 0;
     }
-
-    kputs("[MACHO-LOADER] VALID MACH-O 64-BIT HEADER FOUND!\n", 0x0000FF00);
-
-    unsigned long long entry_point = 0;
-    unsigned char *cmd_ptr = file_buffer + sizeof(mach_header_64_t);
-
-    for (unsigned int i = 0; i < header->ncmds; i++) {
-        unsigned int cmd = *(unsigned int *)cmd_ptr;
-        unsigned int cmdsize = *(unsigned int *)(cmd_ptr + 4);
-
-        if (cmd == LC_SEGMENT_64) {
-            segment_command_64_t *seg = (segment_command_64_t *)cmd_ptr;
-
-            if (seg->vmsize > 0) {
-                kputs("  -> SEGMENT: ", 0x0000FFFF);
-                kputs(seg->segname, 0x0000FFFF);
-                kputs(" VADDR: ", 0x0000FFFF);
-                kput_hex(seg->vmaddr, 0x0000FFFF);
-                kputs("\n", 0x0000FFFF);
-
-                if (seg->vmaddr != 0) {
-                    for (unsigned long long offset = 0; offset < seg->vmsize; offset += PAGE_SIZE) {
-                        void *phys_page = pmm_alloc_page();
-                        vmm_map_page(kernel_pml4, seg->vmaddr + offset, (unsigned long long)phys_page,
-                                     0x07); // Present | Writable | User
-                    }
-
-                    // 파일 세그먼트 데이터 복사
-                    if (seg->filesize > 0) {
-                        unsigned char *dst = (unsigned char *)seg->vmaddr;
-                        unsigned char *src = file_buffer + seg->fileoff;
-                        for (unsigned long long b = 0; b < seg->filesize; b++) {
-                            dst[b] = src[b];
-                        }
-                    }
-
-                    // PAGEZERO 세그먼트가 아닌 첫 가상 주소를 entry_point 기본값으로 지정
-                    if (entry_point == 0 && seg->vmaddr != 0) {
-                        entry_point = seg->vmaddr;
-                    }
-                }
-            }
-        }
-        cmd_ptr += cmdsize;
-    }
-
     return entry_point;
 }

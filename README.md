@@ -16,14 +16,16 @@ UEFI 환경에서 부팅되는 x86_64 교육용 운영체제 커널 프로젝트
 - UEFI 메모리 맵을 활용한 페이지 단위 물리 메모리 관리자(PMM)
 - 4단계 페이지 테이블 기반 가상 메모리 관리자(VMM)
 - GDT 및 256개 엔트리의 IDT 초기화, 기본 예외 처리
-- 로컬 APIC 초기화 코드
-- 원형 큐 기반 Mach 스타일 포트/메시지 IPC
-- 로컬 APIC 타이머 인터럽트로 전환되는 라운드 로빈 커널 스레드 스케줄러
-- 태스크별 페이지 테이블/포트 권한 구조와 태스크·포트 생성/삭제 API
-- `IA32_LSTAR` MSR 기반 x86_64 시스템 콜 진입점 및 `SYS_MACH_MSG` 예제 호출
-- PS/2 키보드 IRQ1 입력과 명령 셸
-- UEFI FAT32 파일 프로토콜로 읽어 온 부팅 파일과 읽기 전용 initramfs 조회 인터페이스
-- QEMU 디버그 포트(`0xE9`) 기반 헤드리스 부팅 로그
+- QEMU legacy VirtIO 블록 장치의 폴링 기반 읽기
+- 읽기 전용 FAT32 파일 조회와 FAT cluster chain 읽기
+- 범위 검사와 `LC_UNIXTHREAD` 진입점 검사를 수행하는 제한된 정적 Mach-O 64 로더
+- Mach-O 텍스트 페이지를 로드 후 쓰기 금지로 전환하는 기본 W^X 경로
+- GDT/TSS와 Task 전용 PML4를 이용한 최소 Ring 3 진입
+- QEMU 디버그 포트(`0xE9`) 기반 헤드리스 부팅 로그와 자동 기준선 검사
+
+## 소스에 있으나 현재 부팅 경로에서 미연결인 실험 모듈
+
+`mach_ipc.c`, `task.c`, `scheduler.c`, `syscall.c`, `keyboard.c`, `shell.c`, `initramfs.c`에는 학습용 초안이 남아 있습니다. 현재 `kernel_main`은 이들을 초기화하거나 완료 기능으로 검증하지 않으므로, IPC·스케줄링·시스템 콜·대화형 셸을 사용할 수 있다고 간주하면 안 됩니다. 이 구분은 `plan/roadmap.md`의 Phase 1/2 작업에서 다시 연결할 때 검증 가능한 계약으로 바꾸기 위한 것입니다.
 
 ## 프로젝트 구조
 
@@ -76,6 +78,12 @@ make run
 # 화면 없이 부팅 로그를 터미널에서 확인
 make run-debug
 
+# QEMU 헤드리스 부팅 기준선 자동 검사
+make test
+
+# Ring 3 보호 페이지 위반과 커널 복구 경로 검사
+make test-user-fault
+
 # 생성물 제거
 make clean
 ```
@@ -85,9 +93,7 @@ make clean
 - `build/BOOTX64.EFI`: UEFI 애플리케이션
 - `build/os_image.img`: QEMU에 연결하는 FAT32 부팅 이미지
 
-정상적으로 부팅되면 화면에 `XNU OS KERNEL INIT...`, IPC 송수신 자가 검증, 시스템 콜 호출/복귀 메시지가 출력됩니다. 이후 APIC 타이머가 두 개의 예제 커널 스레드를 번갈아 실행합니다.
-
-`make run`으로 실행한 QEMU 창을 클릭하면 키보드로 셸을 사용할 수 있습니다.
+정상적으로 부팅되면 화면에 `XNU OS KERNEL INIT...`, VirtIO 블록 장치/FAT32 초기화, Mach-O 진입점 로드 메시지가 출력됩니다. 현재 USERAPP은 Ring 3에서 무한 루프를 실행하는 최소 전환 검증 프로그램입니다. 대화형 셸은 아직 현재 부팅 경로에 연결되어 있지 않습니다.
 
 ## VS Code 저장 시 린팅·포맷
 
@@ -119,6 +125,8 @@ make lint
 | `cat README.TXT` | 내장 initramfs 파일 내용 출력 (대소문자 무관) |
 | `cat BOOT.TXT` | FAT32 부팅 이미지에서 UEFI가 읽어 전달한 파일 내용 출력 |
 
+위 명령은 미연결 실험 셸이 다시 부팅 경로에 연결된 뒤의 인터페이스 초안입니다. 현재 빌드에서는 사용할 수 없습니다.
+
 ## 초기화 흐름
 
 ```text
@@ -126,22 +134,20 @@ UEFI efi_main
   → GOP·메모리 맵 수집
   → ExitBootServices
   → kernel_main
-  → 콘솔 → PMM → VMM → GDT/IDT → IPC → 스케줄러 → 태스크 → 시스템 콜
-  → IPC 자가 검증 → 예제 스레드 생성 → APIC 타이머 → 인터럽트 허용
+  → 콘솔 → PMM → VMM → GDT/TSS → IDT → VirtIO 블록 → FAT32
+  → Mach-O 검증·적재 → Ring 3 USERAPP 진입
 ```
 
 ## 수동 확인 방법
 
 1. `make clean && make` 실행 후 오류 없이 `build/os_image.img`가 생성되는지 확인합니다.
 2. `make run`으로 QEMU를 실행합니다.
-3. `[TEST] IPC SEND/RECEIVE SUCCESSFUL!` 및 `[TEST] SYSCALL RETURN SUCCESSFUL!` 메시지가 표시되는지 확인합니다.
-4. `[INITRAMFS] FAT BOOT FILE LOADED:` 메시지가 표시되는지 확인합니다.
-5. QEMU 창에서 `help`, `mem`, `spawn`, `tasks`, `ls`, `cat readme.txt`, `cat boot.txt`를 차례로 입력해 결과를 확인합니다.
-6. GUI 없이 초기화 로그만 검증하려면 `make run-debug`를 사용합니다.
-7. 실패하면 `make`의 컴파일/링커 출력과 QEMU 디버그 로그를 함께 확인합니다. 특히 Homebrew 패키지 경로와 OVMF 펌웨어 탐색 여부를 점검합니다.
+3. `[VIRTIO-BLK] INITIALIZED SUCCESSFULLY!`, `[FAT32] FS INITIALIZED!`, `[MACHO] ENTRY POINT LOADED:` 메시지가 표시되는지 확인합니다.
+4. GUI 없이 이 과정을 자동 판정하려면 `make test`를 실행합니다. USERAPP이 계속 실행되므로 5초 타임아웃은 성공 조건입니다.
+5. 실패하면 `make`의 컴파일/링커 출력과 `make run-debug`의 QEMU 로그를 함께 확인합니다. 특히 Homebrew 패키지 경로와 OVMF 펌웨어 탐색 여부를 점검합니다.
 
 ## 현재 한계와 다음 단계
 
-이 프로젝트는 학습용 최소 구현입니다. 태스크는 커널 내부의 자원 관리 모델이며 아직 Ring 3 사용자 모드로 전환하지 않습니다. 파일 조회는 내장 initramfs와 UEFI가 부팅 전에 읽어 전달한 FAT32 파일을 사용합니다. 커널 자체의 VirtIO 블록 드라이버·FAT 디스크 읽기·실행 파일 로더는 아직 구현하지 않았습니다. 페이지 권한 보호와 정식 사용자 공간 시스템 콜 ABI도 후속 작업입니다.
+이 프로젝트는 학습용 최소 구현입니다. 현재 Ring 3 진입은 가능하지만 Task별 주소 공간·사용자 예외 격리·안전한 syscall 복귀는 아직 완성되지 않았습니다. 커널에는 legacy VirtIO 블록 읽기와 제한된 읽기 전용 FAT32·Mach-O 로더가 있으나, 드라이버 timeout/복구·FAT의 전체 디렉터리 처리·실행 이미지의 자원 회수는 후속 작업입니다. 페이지 권한 보호와 정식 사용자 공간 시스템 콜 ABI도 후속 작업입니다.
 
 다음 단계로는 VirtIO 블록 드라이버와 FAT 읽기 계층을 추가하고, TSS/GDT 사용자 세그먼트와 페이지 권한을 바탕으로 Ring 3 프로세스를 도입하는 것을 권장합니다.

@@ -26,15 +26,12 @@ task_t *task_create(void) {
             t->is_active = 1;
             t->port_count = 0;
 
-            // Task 전용 PML4 (페이지 테이블) 할당
-            t->pml4 = (page_table_t *)pmm_alloc_page();
+            // 커널 매핑을 supervisor 전용으로 보존한 Task 전용 PML4를 만든다.
+            t->pml4 = vmm_create_user_pml4();
             if (!t->pml4) {
                 t->task_id = 0;
                 t->is_active = 0;
                 return 0;
-            }
-            for (int j = 0; j < 512; j++) {
-                t->pml4->entries[j] = 0;
             }
 
             kputs("[TASK] CREATED TASK ID: ", 0x00FFFF00);

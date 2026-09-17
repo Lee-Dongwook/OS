@@ -20,6 +20,7 @@ KERNEL_DIR = kernel
 EFI_IMAGE  = $(BUILD_DIR)/BOOTX64.EFI
 DISK_IMG   = $(BUILD_DIR)/os_image.img
 USERAPP    = $(BUILD_DIR)/USERAPP
+USERFAULT  = $(BUILD_DIR)/USERFAULT
 
 # userapp.c를 커널 자동 스캔 대상에서 명확히 제외
 C_SRCS     = $(filter-out $(KERNEL_DIR)/userapp.c, $(wildcard $(KERNEL_DIR)/*.c))
@@ -34,6 +35,7 @@ BOOT_OBJ   = $(BUILD_DIR)/boot_main.o
 LINT_SRCS  = $(BOOT_DIR)/main.c $(C_SRCS)
 
 OVMF       = $(shell find /opt/homebrew/Cellar/qemu /usr/local/Cellar/qemu -name "edk2-x86_64-code.fd" 2>/dev/null | head -n 1)
+QEMU       ?= qemu-system-x86_64
 
 # ==========================================
 # 빌드 타겟 규칙
@@ -46,6 +48,9 @@ $(BUILD_DIR):
 # 1. Mach-O 유저 애플리케이션 빌드
 $(USERAPP): $(KERNEL_DIR)/userapp.c | $(BUILD_DIR)
 	$(CC) -target x86_64-apple-macos -nostdlib -Wl,-static -Wl,-e,__start -o $@ $<
+
+$(USERFAULT): $(KERNEL_DIR)/userapp.c | $(BUILD_DIR)
+	$(CC) -target x86_64-apple-macos -nostdlib -DUSERAPP_FAULT_TEST -Wl,-static -Wl,-e,__start -o $@ $<
 
 # 2. 커널 및 부트로더 오브젝트 파일 빌드
 $(BOOT_OBJ): $(BOOT_DIR)/main.c | $(BUILD_DIR)
@@ -79,12 +84,35 @@ $(DISK_IMG): $(EFI_IMAGE) $(USERAPP)
 	mcopy -i $(DISK_IMG) $(USERAPP) ::/USERAPP
 
 run: $(DISK_IMG)
-	qemu-system-x86_64 -drive if=pflash,format=raw,readonly=on,file="$(OVMF)" \
+	$(QEMU) -drive if=pflash,format=raw,readonly=on,file="$(OVMF)" \
 	                   -drive file=$(DISK_IMG),format=raw,if=none,id=bootdisk \
 	                   -device virtio-blk-pci,drive=bootdisk \
 	                   -net none
 
+# 프레임버퍼 창 없이 QEMU 디버그 포트(0xE9) 로그를 표준 출력으로 표시한다.
+run-debug: $(DISK_IMG)
+	$(QEMU) -display none -debugcon stdio -global isa-debugcon.iobase=0xe9 \
+	        -drive if=pflash,format=raw,readonly=on,file="$(OVMF)" \
+	        -drive file=$(DISK_IMG),format=raw,if=none,id=bootdisk \
+	        -device virtio-blk-pci,drive=bootdisk -net none -no-reboot
+
+# Phase 0 기준선: 빌드 결과가 QEMU에서 사용자 코드 진입 직전까지 도달하고,
+# 예상치 못한 재부팅/예외 없이 지정 시간 동안 유지되는지 검사한다.
+test-boot: $(DISK_IMG)
+	./scripts/verify_boot.sh "$(OVMF)" "$(DISK_IMG)" "$(QEMU)"
+
+test: test-boot
+
+# 정상 USERAPP을 만든 뒤 fault 전용 이미지를 FAT 디스크에 교체한다.
+# 이 검사는 사용자 보호 페이지 위반이 커널 복구 경로로 끝나는지 확인한다.
+test-user-fault: $(DISK_IMG) $(USERFAULT)
+	mcopy -o -i $(DISK_IMG) $(USERFAULT) ::/USERAPP
+	./scripts/verify_user_fault.sh "$(OVMF)" "$(DISK_IMG)" "$(QEMU)"
+
+help:
+	@echo "Targets: all lint run run-debug test-boot test test-user-fault clean"
+
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run clean lint
+.PHONY: all run run-debug test-boot test test-user-fault clean lint help
