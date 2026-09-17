@@ -33,13 +33,13 @@ make test
 
 ## 현재 객체와 오류 계약
 
-| 구성 요소 | 현재 소유자 | 실패 결과 | 다음 단계 |
-| --- | --- | --- | --- |
-| 물리 페이지 | PMM bitmap | `pmm_alloc_page()`가 0 반환 | 예약 영역 정확화, quota |
-| 페이지 매핑 | VMM | 현재 API는 매핑 실패를 반환하지 않음 | Task별 VSpace·U/S·NX 계약 |
-| FAT32 읽기 | `fat32.c` | -1 반환, 읽기 전용 | FAT chain·디렉터리 범위 확장 및 사용자 공간 이관 |
-| Mach-O 이미지 | `macho.c` | 검증 실패 시 0 반환, Ring 3 진입 금지 | Task별 주소 공간·페이지 회수 |
-| VirtIO 요청 | `virtio_blk.c` | -1 반환 또는 현재 폴링 대기 | timeout·취소·driver recovery |
+| 구성 요소     | 현재 소유자    | 실패 결과                             | 다음 단계                                        |
+| ------------- | -------------- | ------------------------------------- | ------------------------------------------------ |
+| 물리 페이지   | PMM bitmap     | `pmm_alloc_page()`가 0 반환           | 예약 영역 정확화, quota                          |
+| 페이지 매핑   | VMM            | 현재 API는 매핑 실패를 반환하지 않음  | Task별 VSpace·U/S·NX 계약                        |
+| FAT32 읽기    | `fat32.c`      | -1 반환, 읽기 전용                    | FAT chain·디렉터리 범위 확장 및 사용자 공간 이관 |
+| Mach-O 이미지 | `macho.c`      | 검증 실패 시 0 반환, Ring 3 진입 금지 | Task별 주소 공간·페이지 회수                     |
+| VirtIO 요청   | `virtio_blk.c` | -1 반환 또는 현재 폴링 대기           | timeout·취소·driver recovery                     |
 
 ## 구현 범위와 미구현 범위
 
