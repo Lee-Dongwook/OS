@@ -8,6 +8,7 @@ extern void kput_hex(unsigned long long val, unsigned int color);
 
 static task_t task_table[MAX_TASKS];
 static int next_task_id = 1;
+static task_t *current_running_task = 0;
 
 void task_init(void) {
   for (int i = 0; i < MAX_TASKS; i++) {
@@ -26,14 +27,19 @@ task_t *task_create(void) {
       task_t *t = &task_table[i];
       t->task_id = next_task_id++;
       t->is_active = 1;
-      t->port_count = 0;
+      cspace_init(&t->cspace);
 
-      // 커널 매핑을 supervisor 전용으로 보존한 Task 전용 PML4를 만든다.
-      t->pml4 = vmm_create_user_pml4();
-      if (!t->pml4) {
-        t->task_id = 0;
-        t->is_active = 0;
-        return 0;
+      // Task 전용 PML4 할당
+      t->pml4 = (page_table_t *)pmm_alloc_page();
+      if (t->pml4) {
+        for (int j = 0; j < 512; j++) {
+          t->pml4->entries[j] = 0;
+        }
+      }
+
+      // 최초 생성된 Task를 current_running_task 기본값으로 설정
+      if (!current_running_task) {
+        current_running_task = t;
       }
 
       kputs("[TASK] CREATED TASK ID: ", 0x00FFFF00);
@@ -43,7 +49,7 @@ task_t *task_create(void) {
       return t;
     }
   }
-  return 0; // Task 공간 부족
+  return 0;
 }
 
 // Task에 Mach Port 권한 추가
@@ -93,4 +99,18 @@ void terminate_current_user_task(const char *reason, uint64_t fault_addr) {
   while (1) {
     __asm__ __volatile__("hlt");
   }
+}
+
+task_t *get_current_task(void) {
+  // 스케줄러 전환 전 단일 Task 동작 시 첫 번째 활성 Task를 반환하도록 세이프티
+  // 처리
+  if (!current_running_task) {
+    for (int i = 0; i < MAX_TASKS; i++) {
+      if (task_table[i].is_active) {
+        current_running_task = &task_table[i];
+        break;
+      }
+    }
+  }
+  return current_running_task;
 }

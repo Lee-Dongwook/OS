@@ -19,6 +19,7 @@ typedef struct task {
 
 void task_init(void);
 task_t *task_create(void);
+task_t *get_current_task(void);
 int task_add_port(task_t *task, unsigned int port_id);
 int task_destroy(task_t *task);
 int task_active_count(void);

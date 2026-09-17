@@ -1,5 +1,10 @@
 #include "syscall.h"
+#include "ipc.h"
 #include <stdint.h>
+
+#define SYS_YIELD 1
+#define SYS_IPC_SEND 10
+#define SYS_IPC_RECV 11
 
 extern void syscall_entry(void);
 extern void kputs(const char *str, unsigned int color);
@@ -80,10 +85,20 @@ do_syscall_dispatcher(unsigned long long sys_num, unsigned long long arg1,
   kputs("\n", 0x0000FFFF);
 
   switch (sys_num) {
-  case 1: // SYS_YIELD 또는 테스트 호출
-    kputs("[SYSCALL] CONTROL PLANE CALL (YIELD/MSG)\n", 0x0000FF00);
-    return 0; // Success
+  case SYS_YIELD:
+    return 0;
+
+  case SYS_IPC_SEND:
+    // arg1: ep_handle, arg2: msg_ptr, arg3: size, arg4: opcode
+    return (unsigned long long)sys_ipc_send((uint32_t)arg1, (const void *)arg2,
+                                            (uint32_t)arg3, (uint32_t)arg4);
+
+  case SYS_IPC_RECV:
+    // arg1: ep_handle, arg2: out_msg_ptr, arg3: max_size, arg4: out_opcode_ptr
+    return (unsigned long long)sys_ipc_recv((uint32_t)arg1, (void *)arg2,
+                                            (uint32_t)arg3, (uint32_t *)arg4);
+
   default:
-    return (unsigned long long)-1; // Invalid Syscall
+    return (unsigned long long)-1;
   }
 }
