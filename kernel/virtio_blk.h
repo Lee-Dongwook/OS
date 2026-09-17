@@ -51,6 +51,5 @@ typedef struct {
 
 void virtio_blk_init(void);
 int virtio_blk_read(unsigned long long sector, void *buffer);
-int virtio_blk_write(unsigned long long sector, const void *buffer);
 
 #endif

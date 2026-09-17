@@ -59,6 +59,5 @@ struct interrupt_frame {
 
 void gdt_init(void);
 void idt_init(void);
-void tss_set_rsp0(unsigned long long rsp0);
 
 #endif

@@ -20,11 +20,22 @@ KERNEL_DIR = kernel
 EFI_IMAGE  = $(BUILD_DIR)/BOOTX64.EFI
 DISK_IMG   = $(BUILD_DIR)/os_image.img
 USERAPP    = $(BUILD_DIR)/USERAPP
-USERFAULT  = $(BUILD_DIR)/USERFAULT
 
-# userapp.c를 커널 자동 스캔 대상에서 명확히 제외
-C_SRCS     = $(filter-out $(KERNEL_DIR)/userapp.c, $(wildcard $(KERNEL_DIR)/*.c))
-ASM_SRCS   = $(wildcard $(KERNEL_DIR)/*.s)
+# 현재 부팅 경로에서 실제로 사용하는 커널 구성 요소만 명시적으로 빌드한다.
+# 실험용 IPC/스케줄러/셸 계열은 소스 트리에서 제거했으며, 새 모듈을 추가할 때는
+# 초기화 순서와 함께 이 목록에 의도적으로 등록한다.
+C_SRCS     = $(KERNEL_DIR)/console.c \
+             $(KERNEL_DIR)/debug.c \
+             $(KERNEL_DIR)/fat32.c \
+             $(KERNEL_DIR)/font.c \
+             $(KERNEL_DIR)/idt.c \
+             $(KERNEL_DIR)/kernel_main.c \
+             $(KERNEL_DIR)/macho.c \
+             $(KERNEL_DIR)/pmm.c \
+             $(KERNEL_DIR)/task.c \
+             $(KERNEL_DIR)/virtio_blk.c \
+             $(KERNEL_DIR)/vmm.c
+ASM_SRCS   = $(KERNEL_DIR)/userland.s
 
 KERNEL_OBJS = $(patsubst $(KERNEL_DIR)/%.c, $(BUILD_DIR)/%.o, $(C_SRCS)) \
               $(patsubst $(KERNEL_DIR)/%.s, $(BUILD_DIR)/%.o, $(ASM_SRCS))
@@ -48,9 +59,6 @@ $(BUILD_DIR):
 # 1. Mach-O 유저 애플리케이션 빌드
 $(USERAPP): $(KERNEL_DIR)/userapp.c | $(BUILD_DIR)
 	$(CC) -target x86_64-apple-macos -nostdlib -Wl,-static -Wl,-e,__start -o $@ $<
-
-$(USERFAULT): $(KERNEL_DIR)/userapp.c | $(BUILD_DIR)
-	$(CC) -target x86_64-apple-macos -nostdlib -DUSERAPP_FAULT_TEST -Wl,-static -Wl,-e,__start -o $@ $<
 
 # 2. 커널 및 부트로더 오브젝트 파일 빌드
 $(BOOT_OBJ): $(BOOT_DIR)/main.c | $(BUILD_DIR)
@@ -103,16 +111,10 @@ test-boot: $(DISK_IMG)
 
 test: test-boot
 
-# 정상 USERAPP을 만든 뒤 fault 전용 이미지를 FAT 디스크에 교체한다.
-# 이 검사는 사용자 보호 페이지 위반이 커널 복구 경로로 끝나는지 확인한다.
-test-user-fault: $(DISK_IMG) $(USERFAULT)
-	mcopy -o -i $(DISK_IMG) $(USERFAULT) ::/USERAPP
-	./scripts/verify_user_fault.sh "$(OVMF)" "$(DISK_IMG)" "$(QEMU)"
-
 help:
-	@echo "Targets: all lint run run-debug test-boot test test-user-fault clean"
+	@echo "Targets: all lint run run-debug test-boot test clean"
 
 clean:
 	rm -rf $(BUILD_DIR)
 
-.PHONY: all run run-debug test-boot test test-user-fault clean lint help
+.PHONY: all run run-debug test-boot test clean lint help

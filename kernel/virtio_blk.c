@@ -13,149 +13,160 @@ static unsigned short queue_size = 0;
 static virtio_blk_req_h req_header __attribute__((aligned(16)));
 static volatile unsigned char req_status __attribute__((aligned(16)));
 
-static inline unsigned int pci_read32(unsigned char bus, unsigned char slot, unsigned char func, unsigned char offset) {
-    unsigned int address =
-        (unsigned int)((bus << 16) | (slot << 11) | (func << 8) | (offset & 0xFC) | ((unsigned int)0x80000000));
-    __asm__ __volatile__("outl %0, %1" : : "a"(address), "Nd"((unsigned short)PCI_CONFIG_ADDRESS));
-    unsigned int val;
-    __asm__ __volatile__("inl %1, %0" : "=a"(val) : "Nd"((unsigned short)PCI_CONFIG_DATA));
-    return val;
-}
-
-static inline unsigned char inb(unsigned short port) {
-    unsigned char ret;
-    __asm__ __volatile__("inb %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
+static inline unsigned int pci_read32(unsigned char bus, unsigned char slot,
+                                      unsigned char func,
+                                      unsigned char offset) {
+  unsigned int address =
+      (unsigned int)((bus << 16) | (slot << 11) | (func << 8) |
+                     (offset & 0xFC) | ((unsigned int)0x80000000));
+  __asm__ __volatile__("outl %0, %1"
+                       :
+                       : "a"(address),
+                         "Nd"((unsigned short)PCI_CONFIG_ADDRESS));
+  unsigned int val;
+  __asm__ __volatile__("inl %1, %0"
+                       : "=a"(val)
+                       : "Nd"((unsigned short)PCI_CONFIG_DATA));
+  return val;
 }
 
 static inline void outb(unsigned short port, unsigned char val) {
-    __asm__ __volatile__("outb %0, %1" : : "a"(val), "Nd"(port));
+  __asm__ __volatile__("outb %0, %1" : : "a"(val), "Nd"(port));
 }
 
 static inline unsigned short inw(unsigned short port) {
-    unsigned short ret;
-    __asm__ __volatile__("inw %1, %0" : "=a"(ret) : "Nd"(port));
-    return ret;
+  unsigned short ret;
+  __asm__ __volatile__("inw %1, %0" : "=a"(ret) : "Nd"(port));
+  return ret;
 }
 
 static inline void outw(unsigned short port, unsigned short val) {
-    __asm__ __volatile__("outw %0, %1" : : "a"(val), "Nd"(port));
+  __asm__ __volatile__("outw %0, %1" : : "a"(val), "Nd"(port));
 }
 
 static inline void outl(unsigned short port, unsigned int val) {
-    __asm__ __volatile__("outl %0, %1" : : "a"(val), "Nd"(port));
+  __asm__ __volatile__("outl %0, %1" : : "a"(val), "Nd"(port));
 }
 
 void virtio_blk_init(void) {
-    for (unsigned short bus = 0; bus < 256; bus++) {
-        for (unsigned char slot = 0; slot < 32; slot++) {
-            unsigned int vendor_dev = pci_read32(bus, slot, 0, 0);
-            unsigned short vendor = vendor_dev & 0xFFFF;
-            unsigned short device = (vendor_dev >> 16) & 0xFFFF;
+  for (unsigned short bus = 0; bus < 256; bus++) {
+    for (unsigned char slot = 0; slot < 32; slot++) {
+      unsigned int vendor_dev = pci_read32(bus, slot, 0, 0);
+      unsigned short vendor = vendor_dev & 0xFFFF;
+      unsigned short device = (vendor_dev >> 16) & 0xFFFF;
 
-            if (vendor == VIRTIO_VENDOR_ID && device == VIRTIO_BLK_DEV_ID) {
-                kputs("[VIRTIO-BLK] DEVICE FOUND AT PCI BUS", 0x00FFFF00);
-                kput_hex(bus, 0x00FFFF00);
-                kputs("\n", 0x00FFFF00);
+      if (vendor == VIRTIO_VENDOR_ID && device == VIRTIO_BLK_DEV_ID) {
+        kputs("[VIRTIO-BLK] DEVICE FOUND AT PCI BUS", 0x00FFFF00);
+        kput_hex(bus, 0x00FFFF00);
+        kputs("\n", 0x00FFFF00);
 
-                unsigned int bar0 = pci_read32(bus, slot, 0, 0x10);
-                virtio_io_base = bar0 & ~0x3;
+        unsigned int bar0 = pci_read32(bus, slot, 0, 0x10);
+        virtio_io_base = bar0 & ~0x3;
 
-                outb(virtio_io_base + 18, 0);
-                outb(virtio_io_base + 18, 1 | 2);
+        outb(virtio_io_base + 18, 0);
+        outb(virtio_io_base + 18, 1 | 2);
 
-                outw(virtio_io_base + 14, 0);
-                queue_size = inw(virtio_io_base + 12);
+        outw(virtio_io_base + 14, 0);
+        queue_size = inw(virtio_io_base + 12);
 
-                if (queue_size < 3) {
-                    kputs("[VIRTIO-BLK] UNSUPPORTED QUEUE SIZE\n", 0x00FF0000);
-                    virtio_io_base = 0;
-                    return;
-                }
-
-                unsigned long long desc_bytes = (unsigned long long)queue_size * sizeof(vring_desc_t);
-                unsigned long long avail_bytes = sizeof(unsigned short) * (3 + queue_size);
-                unsigned long long used_off = (desc_bytes + avail_bytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1ULL);
-                unsigned long long used_bytes = sizeof(unsigned short) * 2 +
-                                                (unsigned long long)queue_size * sizeof(vring_used_elem_t);
-                unsigned long long queue_bytes = used_off + used_bytes;
-                unsigned long long page_count = (queue_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
-
-                void *vq_page = pmm_alloc_page();
-                if (!vq_page) {
-                    kputs("[VIRTIO-BLK] FAILED TO ALLOCATE CONTIGUOUS QUEUE MEMORY\n", 0x00FF0000);
-                    virtio_io_base = 0;
-                    return;
-                }
-
-                for (unsigned long long page = 1; page < page_count; page++) {
-                    void *next_page = pmm_alloc_page();
-                    if (!next_page ||
-                        (unsigned long long)next_page != (unsigned long long)vq_page + page * PAGE_SIZE) {
-                        kputs("[VIRTIO-BLK] FAILED TO ALLOCATE CONTIGUOUS QUEUE MEMORY\n", 0x00FF0000);
-                        virtio_io_base = 0;
-                        return;
-                    }
-                }
-
-                unsigned char *queue_memory = (unsigned char *)vq_page;
-                for (unsigned long long i = 0; i < queue_bytes; i++) {
-                    queue_memory[i] = 0;
-                }
-
-                desc_table = (vring_desc_t *)vq_page;
-                avail_ring = (vring_avail_t *)((unsigned char *)vq_page + queue_size * sizeof(vring_desc_t));
-
-                used_ring = (vring_used_t *)((unsigned char *)vq_page + used_off);
-
-                outl(virtio_io_base + 8, ((unsigned long long)vq_page) >> 12);
-
-                outb(virtio_io_base + 18, 1 | 2 | 4);
-                kputs("[VIRTIO-BLK] INITIALIZED SUCCESSFULLY!\n", 0x0000FF00);
-                return;
-            }
+        if (queue_size < 3) {
+          kputs("[VIRTIO-BLK] UNSUPPORTED QUEUE SIZE\n", 0x00FF0000);
+          virtio_io_base = 0;
+          return;
         }
+
+        unsigned long long desc_bytes =
+            (unsigned long long)queue_size * sizeof(vring_desc_t);
+        unsigned long long avail_bytes =
+            sizeof(unsigned short) * (3 + queue_size);
+        unsigned long long used_off =
+            (desc_bytes + avail_bytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1ULL);
+        unsigned long long used_bytes =
+            sizeof(unsigned short) * 2 +
+            (unsigned long long)queue_size * sizeof(vring_used_elem_t);
+        unsigned long long queue_bytes = used_off + used_bytes;
+        unsigned long long page_count =
+            (queue_bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+
+        void *vq_page = pmm_alloc_page();
+        if (!vq_page) {
+          kputs("[VIRTIO-BLK] FAILED TO ALLOCATE CONTIGUOUS QUEUE MEMORY\n",
+                0x00FF0000);
+          virtio_io_base = 0;
+          return;
+        }
+
+        for (unsigned long long page = 1; page < page_count; page++) {
+          void *next_page = pmm_alloc_page();
+          if (!next_page ||
+              (unsigned long long)next_page !=
+                  (unsigned long long)vq_page + page * PAGE_SIZE) {
+            kputs("[VIRTIO-BLK] FAILED TO ALLOCATE CONTIGUOUS QUEUE MEMORY\n",
+                  0x00FF0000);
+            virtio_io_base = 0;
+            return;
+          }
+        }
+
+        unsigned char *queue_memory = (unsigned char *)vq_page;
+        for (unsigned long long i = 0; i < queue_bytes; i++) {
+          queue_memory[i] = 0;
+        }
+
+        desc_table = (vring_desc_t *)vq_page;
+        avail_ring = (vring_avail_t *)((unsigned char *)vq_page +
+                                       queue_size * sizeof(vring_desc_t));
+
+        used_ring = (vring_used_t *)((unsigned char *)vq_page + used_off);
+
+        outl(virtio_io_base + 8, ((unsigned long long)vq_page) >> 12);
+
+        outb(virtio_io_base + 18, 1 | 2 | 4);
+        kputs("[VIRTIO-BLK] INITIALIZED SUCCESSFULLY!\n", 0x0000FF00);
+        return;
+      }
     }
-    kputs("[VIRTIO-BLK] NO VIRTIO BLOCK DEVICE FOUND\n", 0x00FF0000);
+  }
+  kputs("[VIRTIO-BLK] NO VIRTIO BLOCK DEVICE FOUND\n", 0x00FF0000);
 }
 
 int virtio_blk_read(unsigned long long sector, void *buffer) {
-    if (!virtio_io_base || !desc_table || !avail_ring || !used_ring || !buffer)
-        return -1;
+  if (!virtio_io_base || !desc_table || !avail_ring || !used_ring || !buffer)
+    return -1;
 
-    req_header.type = 0;
-    req_header.ioprio = 0;
-    req_header.sector = sector;
-    req_status = 0xFF;
+  req_header.type = 0;
+  req_header.ioprio = 0;
+  req_header.sector = sector;
+  req_status = 0xFF;
 
-    desc_table[0].addr = (unsigned long long)&req_header;
-    desc_table[0].len = sizeof(virtio_blk_req_h);
-    desc_table[0].flags = 1;
-    desc_table[0].next = 1;
+  desc_table[0].addr = (unsigned long long)&req_header;
+  desc_table[0].len = sizeof(virtio_blk_req_h);
+  desc_table[0].flags = 1;
+  desc_table[0].next = 1;
 
-    desc_table[1].addr = (unsigned long long)buffer;
-    desc_table[1].len = 512;
-    desc_table[1].flags = VRING_DESC_F_NEXT | VRING_DESC_F_WRITE;
-    desc_table[1].next = 2;
+  desc_table[1].addr = (unsigned long long)buffer;
+  desc_table[1].len = 512;
+  desc_table[1].flags = VRING_DESC_F_NEXT | VRING_DESC_F_WRITE;
+  desc_table[1].next = 2;
 
-    desc_table[2].addr = (unsigned long long)&req_status;
-    desc_table[2].len = 1;
-    desc_table[2].flags = VRING_DESC_F_WRITE;
-    desc_table[2].next = 0;
+  desc_table[2].addr = (unsigned long long)&req_status;
+  desc_table[2].len = 1;
+  desc_table[2].flags = VRING_DESC_F_WRITE;
+  desc_table[2].next = 0;
 
-    avail_ring->ring[avail_ring->idx % queue_size] = 0;
-    __asm__ __volatile__("" ::: "memory");
-    avail_ring->idx++;
+  avail_ring->ring[avail_ring->idx % queue_size] = 0;
+  __asm__ __volatile__("" ::: "memory");
+  avail_ring->idx++;
 
-    // QEMU 명령줄의 virtio-blk-pci는 legacy PCI I/O 인터페이스를 사용한다.
-    // Queue Notify 레지스터는 I/O base + 16이며, MMIO 주소가 아니다.
-    outw(virtio_io_base + 16, 0);
+  // QEMU 명령줄의 virtio-blk-pci는 legacy PCI I/O 인터페이스를 사용한다.
+  // Queue Notify 레지스터는 I/O base + 16이며, MMIO 주소가 아니다.
+  outw(virtio_io_base + 16, 0);
 
-    while (req_status == 0xFF) {
-        __asm__ __volatile__("pause");
-    }
+  while (req_status == 0xFF) {
+    __asm__ __volatile__("pause");
+  }
 
-    __asm__ __volatile__("" ::: "memory");
+  __asm__ __volatile__("" ::: "memory");
 
-    return (req_status == 0) ? 0 : -1;
+  return (req_status == 0) ? 0 : -1;
 }

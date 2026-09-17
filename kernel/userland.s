@@ -1,8 +1,4 @@
 .global enter_user_mode
-.global enter_userland
-.global _enter_userland
-
-.extern do_syscall
 
 enter_user_mode:
     # Windows x64 ABI (이 커널의 C 컴파일 타깃):
@@ -25,17 +21,3 @@ enter_user_mode:
     # 새 CR3도 커널의 supervisor 매핑을 포함하므로 iretq 전 커널 스택은 유효하다.
     mov %r8, %cr3
     iretq              # Ring 3로 전환
-
-enter_userland:
-_enter_userland:
-    # RDI = entry_point, RSI = user_stack
-    # Ring 3 진입 제어 코드 (iretq 또는 sysretq)
-    mov %rdi, %rbx
-    mov %rsi, %rsp
-    jmp *%rbx
-
-.section .bss
-.align 16
-kernel_syscall_stack:
-    .skip 8192
-kernel_syscall_stack_top:

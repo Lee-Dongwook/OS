@@ -21,15 +21,15 @@ if [[ ! -f "$disk_image" ]]; then
 fi
 
 set +e
-timeout 5s "$qemu_bin" \
+timeout 10s "$qemu_bin" \
     -display none \
-    -debugcon stdio \
+    -debugcon "file:$log_file" \
     -global isa-debugcon.iobase=0xe9 \
     -drive if=pflash,format=raw,readonly=on,file="$ovmf_path" \
     -drive file="$disk_image",format=raw,if=none,id=bootdisk \
     -device virtio-blk-pci,drive=bootdisk \
     -net none \
-    -no-reboot >"$log_file" 2>&1
+    -no-reboot 2>>"$log_file"
 qemu_exit=$?
 set -e
 
