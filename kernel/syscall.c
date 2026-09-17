@@ -1,10 +1,12 @@
 #include "syscall.h"
 #include "ipc.h"
+#include "spsc_ring.h"
 #include <stdint.h>
 
 #define SYS_YIELD 1
 #define SYS_IPC_SEND 10
 #define SYS_IPC_RECV 11
+#define SYS_RING_REGISTER 12
 
 extern void syscall_entry(void);
 extern void kputs(const char *str, unsigned int color);
@@ -97,6 +99,11 @@ do_syscall_dispatcher(unsigned long long sys_num, unsigned long long arg1,
     // arg1: ep_handle, arg2: out_msg_ptr, arg3: max_size, arg4: out_opcode_ptr
     return (unsigned long long)sys_ipc_recv((uint32_t)arg1, (void *)arg2,
                                             (uint32_t)arg3, (uint32_t *)arg4);
+
+  case SYS_RING_REGISTER:
+    // arg1: spsc_ring_buffer_t 포인터
+    spsc_ring_init((spsc_ring_buffer_t *)arg1);
+    return 0;
 
   default:
     return (unsigned long long)-1;
